@@ -1,13 +1,18 @@
+#include "ros/ros.h"
 #include <iostream>
 #include <serial.hpp>
 #include <sensor_msgs/Imu.h>
 #include <std_msgs/Int32.h>
 #include <lidar.h>
-#include "ros/ros.h"
 #include <mutex>
 #include <cmath>
 #include "osqp.h"
 #include <geometry_msgs/Twist.h>
+#include "tf/transform_listener.h"
+#include "laser_geometry/laser_geometry.h"
+#include <sensor_msgs/LaserScan.h>
+#include "sensor_msgs/PointCloud.h"
+#include "sensor_msgs/PointCloud2.h"
 #include "vel.h"
 
 
@@ -36,10 +41,29 @@
 
 using namespace std;
 
+double roll_d,pitch_d,throttle_d;
+
 mutex imu_mutex;
 imu_t imu;
 int rc_ch7;
 rc_data rc;
+
+
+laser_geometry::LaserProjection projector_;
+tf::TransformListener listener;
+
+
+void lidar_callback(const sensor_msgs::LaserScan::ConstPtr& msg){
+	
+	sensor_msgs::PointCloud cloud;
+    try{
+        projector_.transformLaserScanToPointCloud(
+          "base_link",*msg, cloud,listener);
+    }catch(tf::TransformException& e){
+        std::cout << e.what();
+        return;
+    }
+}
 
 float bound_rc(float v){
 	if(v>upper_rc){
@@ -180,10 +204,10 @@ float* qp_solve(float* acc){
 }
 
 
-int imu_thread_entry(){
+int lidar_thread_entry(){
 	char c;
 	imu.buf_pos = 0;
-	double roll_d,pitch_d,throttle_d;
+	
 	float rc_throttle,rc_roll,rc_pitch,rc_yaw,force,force_d;
 	float acc[3]={0.0,0.0,0.0};
 	float acc_d[3]={0.0,0.0,0.0};
@@ -195,7 +219,7 @@ int imu_thread_entry(){
 	ros::Publisher debug_rc_pub = n.advertise<geometry_msgs::Twist>("rc_info", 1); 
 	ros::Publisher debug_qp_pub = n.advertise<geometry_msgs::Twist>("qp_info", 1); 
 	ros::Publisher vel_pub = n.advertise<geometry_msgs::Vector3>("vel_info", 1); 
-	
+	ros::Subscriber lidar_sub = n.subscribe("/scan",1,lidar_callback);
 	/* debug */
 	geometry_msgs::Twist debug_rc;
 	geometry_msgs::Twist debug_qp;	
@@ -299,7 +323,7 @@ int imu_thread_entry(){
 					vel_pub.publish(vel_value);
 
 					//send sol to uart
-					send_pose_to_serial(roll_d,pitch_d,throttle_d,0.0,0.0,0.0,0.0,0.0,0.0,0.0);
+					//send_pose_to_serial(roll_d,pitch_d,throttle_d,0.0,0.0,0.0,0.0,0.0,0.0,0.0);
 					//send_pose_to_serial(imu.acc[0],imu.acc[1],imu.gyrop[0],0.0,0.0,0.0,0.0,0.0,0.0,0.0);
 
 

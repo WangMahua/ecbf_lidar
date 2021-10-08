@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.0.2)
 project(ecbf_lidar)
 
 ## Compile as C++11, supported in ROS Kinetic and newer
-# add_compile_options(-std=c++11)
+add_compile_options(-std=c++11)
 
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
@@ -16,7 +16,9 @@ find_package(catkin REQUIRED COMPONENTS
   tf
   sensor_msgs
   geometry_msgs
-  message_generation
+  laser_geometry
+  pcl_conversions
+  pcl_ros
 )
 
 find_package(osqp REQUIRED)
@@ -113,7 +115,7 @@ generate_messages(
 catkin_package(
   INCLUDE_DIRS include
   LIBRARIES ecbf_lidar
-  CATKIN_DEPENDS roscpp rospy std_msgs
+  CATKIN_DEPENDS roscpp rospy std_msgs 
   DEPENDS system_lib
 )
 
@@ -144,6 +146,7 @@ add_library(${PROJECT_NAME}
   src/main.cpp
   src/serial.cpp
   src/thread/vel.cpp
+  src/thread/uart.cpp
 )
 
 ## Add cmake target dependencies of the library
@@ -232,12 +235,14 @@ add_library(lidar
 
 target_link_libraries(lidar PUBLIC
   osqp::osqp
+  ${catkin_LIBRARIES} 
 )
 
 add_executable(vins_to_controller
   src/main.cpp
   src/serial.cpp
   src/thread/vel.cpp
+  src/thread/uart.cpp
 )
 target_link_libraries(vins_to_controller PUBLIC
   ${catkin_LIBRARIES}

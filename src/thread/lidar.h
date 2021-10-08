@@ -1,5 +1,5 @@
-#ifndef __IMU_THREAD_H__
-#define __IMU_THREAD_H__
+#ifndef __LIDAR_H__
+#define __LIDAR_H__
 
 #define IMU_SERIAL_MSG_SIZE 27 
 #define IMU_CHECKSUM_INIT_VAL 19
@@ -10,6 +10,7 @@
 extern double roll_d;
 extern double pitch_d;
 extern double throttle_d;
+
 
 typedef struct {
 	
@@ -45,6 +46,6 @@ int imu_decode(uint8_t *);
 
 void imu_buf_push(uint8_t);
 
-int imu_thread_entry();
+int lidar_thread_entry();
 
 #endif

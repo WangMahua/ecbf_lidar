@@ -85,18 +85,10 @@ void pos_callback(const geometry_msgs::PoseStamped::ConstPtr& msg){
 			last_pos[1] = pos[1];
 			last_pos[2] = pos[2];
 			last_time = now_time;
-/*
-			//pub path info 
-		    	path.header = msg->header;
-		    	path.poses.push_back(*msg);
-		    	path_pub.publish(path);
-*/
-		}
 
+		}
 }
-void odom_callback(nav_msgs::Odometry odom)
-{
-//	cout << odom.pose.pose.position.x << endl;
+void odom_callback(nav_msgs::Odometry odom){
 	send_pose_to_serial( 
 				odom.pose.pose.position.x,
 				odom.pose.pose.position.y,
@@ -108,13 +100,12 @@ void odom_callback(nav_msgs::Odometry odom)
 				odom.twist.twist.linear.x,
 				odom.twist.twist.linear.y,
 				odom.twist.twist.linear.z
-			);
+	);
 }
-int ros_thread_entry(){
+int vel_thread_entry(){
 	ros::NodeHandle n;	
 	ros::Subscriber sub = n.subscribe("vins_estimator/imu_propagate",1000,odom_callback);
 	ros::Subscriber pos_sub = n.subscribe("/vrpn_client_node/MAV1/pose", 1, pos_callback);
-	path_pub = n.advertise<nav_msgs::Path>("ECBF_Path", 1);
 	ros::spin();
 	return 0;
 }
