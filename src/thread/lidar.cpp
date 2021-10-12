@@ -49,12 +49,12 @@ int rc_ch7;
 rc_data rc;
 
 
-laser_geometry::LaserProjection projector_;
-tf::TransformListener listener;
+
 
 
 void lidar_callback(const sensor_msgs::LaserScan::ConstPtr& msg){
-	
+	laser_geometry::LaserProjection projector_;
+	tf::TransformListener listener;
 	sensor_msgs::PointCloud cloud;
     try{
         projector_.transformLaserScanToPointCloud(

@@ -231,12 +231,14 @@ add_library(${PROJECT_NAME}
 
 add_library(lidar
    src/thread/lidar.cpp
- )
+)
 
 target_link_libraries(lidar PUBLIC
   osqp::osqp
   ${catkin_LIBRARIES} 
 )
+
+
 
 add_executable(vins_to_controller
   src/main.cpp
