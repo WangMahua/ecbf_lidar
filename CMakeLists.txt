@@ -240,13 +240,13 @@ target_link_libraries(lidar PUBLIC
 
 
 
-add_executable(vins_to_controller
+add_executable(ecbf_controller
   src/main.cpp
   src/serial.cpp
   src/thread/vel.cpp
   src/thread/uart.cpp
 )
-target_link_libraries(vins_to_controller PUBLIC
+target_link_libraries(ecbf_controller PUBLIC
   ${catkin_LIBRARIES}
   lidar
 )
