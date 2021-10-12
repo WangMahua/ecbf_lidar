@@ -229,6 +229,8 @@ add_library(${PROJECT_NAME}
 ## Add folders to be run by python nosetests
 # catkin_add_nosetests(test)
 
+
+
 add_library(lidar
    src/thread/lidar.cpp
 )
@@ -237,8 +239,6 @@ target_link_libraries(lidar PUBLIC
   osqp::osqp
   ${catkin_LIBRARIES} 
 )
-
-
 
 add_executable(ecbf_controller
   src/main.cpp
@@ -251,11 +251,13 @@ target_link_libraries(ecbf_controller PUBLIC
   lidar
 )
 
-add_executable(odometry 
+add_executable(odom_
   src/odometry.cpp
 )
 
-target_link_libraries(odometry 
+target_link_libraries(odom_
   ${catkin_LIBRARIES} 
 )
+
+
 
