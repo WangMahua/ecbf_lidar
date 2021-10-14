@@ -49,19 +49,18 @@ int rc_ch7;
 rc_data rc;
 
 
-
-
-
 void lidar_callback(const sensor_msgs::LaserScan::ConstPtr& msg){
 	laser_geometry::LaserProjection projector_;
 	tf::TransformListener listener;
-	sensor_msgs::PointCloud cloud;
+	sensor_msgs::PointCloud2 cloud;
     try{
         projector_.transformLaserScanToPointCloud(
-          "base_link",*msg, cloud,listener);
+          "laser",*msg, cloud,listener);
+		
+		cout<< cloud.point_step << endl;
+		cout<< cloud.row_step << endl;
     }catch(tf::TransformException& e){
         std::cout << e.what();
-        return;
     }
 }
 
