@@ -54,6 +54,7 @@ float fix_vel(float now_vel,float old_vel){
 }
 
 void pos_callback(const geometry_msgs::PoseStamped::ConstPtr& msg){
+
 		double now_time;
 		if (pose_init_flag == false){
 			now_time = ros::Time::now().toSec();

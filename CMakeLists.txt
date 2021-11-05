@@ -2,7 +2,10 @@ cmake_minimum_required(VERSION 3.0.2)
 project(ecbf_lidar)
 
 ## Compile as C++11, supported in ROS Kinetic and newer
-add_compile_options(-std=c++11)
+#add_compile_options(-std=c++17)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
@@ -21,7 +24,12 @@ find_package(catkin REQUIRED COMPONENTS
   pcl_ros
 )
 
+
 find_package(osqp REQUIRED)
+find_package(absl REQUIRED)
+
+
+
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
@@ -127,6 +135,14 @@ catkin_package(
 ## Your package locations should be listed before other locations
 
 ##set() is use to assign 
+
+set(INC_FOR_OSQP
+  /home/mahua/library/osqp-cpp/include
+  /home/mahua/library/osqp-cpp/src
+  
+)
+
+
 set(INC
     ./ 
     ./src
@@ -134,11 +150,12 @@ set(INC
 )
 
 include_directories(
-# include
+  include
   ${catkin_INCLUDE_DIRS}
   ${osqp_INCLUDE_DIRS}
   ${ecbf_uart_INCLUDE_DIRS}
   ${INC}
+  ${INC_FOR_OSQP}
 )
 
 ## Declare a C++ library
@@ -236,9 +253,14 @@ add_library(lidar
 )
 
 target_link_libraries(lidar PUBLIC
-  osqp::osqp
+  osqp::osqp 
+  absl::status
+  absl::base
+  absl::strings
   ${catkin_LIBRARIES} 
 )
+
+
 
 add_executable(ecbf_controller
   src/main.cpp
@@ -246,8 +268,8 @@ add_executable(ecbf_controller
   src/thread/vel.cpp
   src/thread/uart.cpp
 )
+
 target_link_libraries(ecbf_controller PUBLIC
-  ${catkin_LIBRARIES}
   lidar
 )
 
@@ -259,5 +281,11 @@ target_link_libraries(odom_
   ${catkin_LIBRARIES} 
 )
 
+add_executable(sparse_matrix_test
+  src/sparse_matrix_test.cpp
+)
 
+target_link_libraries(sparse_matrix_test
+  ${catkin_LIBRARIES} 
+)
 

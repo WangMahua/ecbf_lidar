@@ -1,6 +1,7 @@
 #ifndef __LIDAR_H__
 #define __LIDAR_H__
 
+
 #define IMU_SERIAL_MSG_SIZE 27 
 #define IMU_CHECKSUM_INIT_VAL 19
 
