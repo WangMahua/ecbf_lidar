@@ -2,9 +2,10 @@ cmake_minimum_required(VERSION 3.0.2)
 project(ecbf_lidar)
 
 ## Compile as C++11, supported in ROS Kinetic and newer
-#add_compile_options(-std=c++17)
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+#add_compile_options(-std=c++11)
+add_compile_options(-std=c++17)
+#set(CMAKE_CXX_FLAGS "-std=c++11 -fPIC ${CMAKE_CXX_FLAGS}")
+#set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 
 ## Find catkin macros and libraries
@@ -24,12 +25,8 @@ find_package(catkin REQUIRED COMPONENTS
   pcl_ros
 )
 
-
 find_package(osqp REQUIRED)
 find_package(absl REQUIRED)
-
-
-
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
@@ -138,8 +135,6 @@ catkin_package(
 
 set(INC_FOR_OSQP
   /home/mahua/library/osqp-cpp/include
-  /home/mahua/library/osqp-cpp/src
-  
 )
 
 
@@ -165,6 +160,7 @@ add_library(${PROJECT_NAME}
   src/thread/vel.cpp
   src/thread/uart.cpp
 )
+
 
 ## Add cmake target dependencies of the library
 ## as an example, code may need to be generated before libraries
@@ -248,19 +244,21 @@ add_library(${PROJECT_NAME}
 
 
 
-add_library(lidar
+add_library(lidar 
    src/thread/lidar.cpp
+)
+
+
+target_link_libraries(lidar PUBLIC
+  absl::status
+  absl::base
+  absl::strings
 )
 
 target_link_libraries(lidar PUBLIC
   osqp::osqp 
-  absl::status
-  absl::base
-  absl::strings
   ${catkin_LIBRARIES} 
 )
-
-
 
 add_executable(ecbf_controller
   src/main.cpp
@@ -281,11 +279,4 @@ target_link_libraries(odom_
   ${catkin_LIBRARIES} 
 )
 
-add_executable(sparse_matrix_test
-  src/sparse_matrix_test.cpp
-)
-
-target_link_libraries(sparse_matrix_test
-  ${catkin_LIBRARIES} 
-)
 

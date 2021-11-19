@@ -17,7 +17,8 @@
 #include "sensor_msgs/point_cloud_conversion.h"
 
 
-#include "osqp++.cc"
+#include "osqp++.h"
+
 /*
 #include "status.cc"
 #include "escaping.h"
