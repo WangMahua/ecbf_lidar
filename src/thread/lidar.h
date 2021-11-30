@@ -11,6 +11,7 @@
 extern double roll_d;
 extern double pitch_d;
 extern double throttle_d;
+extern double pub_to_controller[3];
 
 
 typedef struct {

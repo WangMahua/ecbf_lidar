@@ -15,6 +15,6 @@ int uart_thread_entry(){
     ros::Rate loop_rate(100);
 	while(ros::ok()){
         //send sol to uart
-        send_pose_to_serial(roll_d,pitch_d,throttle_d,0.0,0.0,0.0,0.0,0.0,0.0,0.0);
+        send_pose_to_serial(pub_to_controller[0],pub_to_controller[1],pub_to_controller[2],0.0,0.0,0.0,0.0,0.0,0.0,0.0);
 	}
 }
