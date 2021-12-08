@@ -26,7 +26,6 @@ find_package(catkin REQUIRED COMPONENTS
 )
 
 find_package(osqp REQUIRED)
-find_package(absl REQUIRED)
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
@@ -248,9 +247,6 @@ add_library(lidar
 )
 
 target_link_libraries(lidar PUBLIC
-  absl::status
-  absl::base
-  absl::strings
 )
 
 target_link_libraries(lidar PUBLIC
