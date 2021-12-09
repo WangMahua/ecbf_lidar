@@ -53,12 +53,12 @@ class ConstraintGenerator:
     def scan_cb(self, data):
         pc2_data = self.lp.projectLaser(data)
         xyz = ros_numpy.point_cloud2.pointcloud2_to_xyz_array(pc2_data)
-        print(np.linalg.norm(xyz,axis=1,keepdims=True))
+        #print(np.linalg.norm(xyz,axis=1,keepdims=True))
         self.pcl = xyz
 
     def contraint_solver(self, u):
         pcl = o3d.geometry.PointCloud()
-        print(self.pcl.shape)
+        # print(self.pcl.shape)
         pcl.points = o3d.utility.Vector3dVector(self.pcl)
         downpcl = pcl.voxel_down_sample(voxel_size=0.1)
 
@@ -67,7 +67,7 @@ class ConstraintGenerator:
         # pcl = pcl[np.abs(pcl[:, 1]) < 1.5]
         # pcl = pcl[np.abs(pcl[:, 2]) < 0.5]
         pcl = -pcl
-        print(pcl)
+        # print(pcl)
         dis_sum_square=np.square(pcl).sum(axis=1)
         vel_sum_square=np.square(self.vel).sum(axis=0)
 
@@ -75,15 +75,13 @@ class ConstraintGenerator:
         h = 2*vel_sum_square*np.ones(len(pcl)) +\
             self.k1*(dis_sum_square-(self.safe_dis*self.safe_dis)*np.ones(len(pcl)))+\
             self.k2*2*(pcl.dot(self.vel))
-        print(g.shape)
-        print(h.shape)
         self.Q = matrix(-0.5*u[0:3],tc='d')
         self.G = matrix(g,tc='d')
         self.H = matrix(h,tc='d')
         #solvers.options['feastol']=1e-5
         sol=solvers.coneqp(self.P, self.Q, self.G, self.H)
         u_star = sol['x']
-        print(u_star)
+        #print(u_star)
         #print(sol['s'])
         return np.array([u_star[0], u_star[1], u_star[2]])
 
@@ -149,12 +147,11 @@ class ConstraintGenerator:
 
 
     def qp_handler(self,data):
-        print("get data")
         u =np.array([0.0,0.0,0.0])
         for i in range(3):
             u[i] = data.desire_input[i] 
         new_u = self.contraint_solver(u)
-        print("vel:"+str(self.vel))
+        print("vel:\n vel[0]:%.5f\n vel[1]:%.5f\n vel[2]:%.5f\n" %(self.vel[0],self.vel[1] ,self.vel[2]))
         return [new_u]
 
     def process(self):

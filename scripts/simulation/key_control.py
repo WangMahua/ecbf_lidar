@@ -72,18 +72,20 @@ class Controller:
     def commander(self, acc_cmd):
         # acc = [0,0,0,0]
         # acc[0],acc[1],acc[2],acc[3] = self.body_to_world(acc_cmd)
+        ez=3-self.current_odom.pose.pose.position.z
         cmd = Vector3Stamped()
         cmd.vector.x = acc_cmd[0]
         cmd.vector.y = acc_cmd[1]
         cmd.vector.z = acc_cmd[2]
-        print("new acc:"+str(acc_cmd))
+        
+        #print("new acc:"+str(acc_cmd)+"\n")
         vel=TwistStamped()
-        ez=3-self.current_odom.pose.pose.position.z
-        vel.twist.linear.x = 0
-        vel.twist.linear.y = 0
+        
+        # vel.twist.linear.x = 0
+        # vel.twist.linear.y = 0
         vel.twist.linear.z = 0
         vel.twist.linear.z = 0.8*ez
-        #self.local_vel_pub.publish(vel)
+        self.local_vel_pub.publish(vel)
         self.local_acc_pub.publish(cmd)
 
     def odom_cb(self, data):
@@ -115,20 +117,22 @@ class Controller:
 
         kb = kbhit.KBHit()
         acc = [0,0,0]
+        now_acc = [0,0,0]
         while not rospy.is_shutdown():
+            acc = now_acc
             if kb.kbhit(): #If a key is pressed:
                 k = kb.getch() #Detect what key was pressed
                 if k == 'A':
-                    acc = [0.2,0,0]
+                    acc = [0.4,0,0]
                     rospy.loginfo("up") # to print on  terminal
                 elif k =='B' :
-                    acc = [-0.2,0,0]
+                    acc = [-0.4,0,0]
                     rospy.loginfo("down") # to print on  terminal
                 elif k == 'C' :
-                    acc = [0,0.2,0]
+                    acc = [0,0.4,0]
                     rospy.loginfo("right") # to print on  terminal
                 elif k == 'D':
-                    acc = [0,-0.2,0]
+                    acc = [0,-0.4,0]
                     rospy.loginfo("left") # to print on  terminal
                 elif k == '0':
                     acc = [0,0,0]
@@ -136,11 +140,18 @@ class Controller:
 
                 else:
                     print("nothing")
+
+            print("origin:\n acc[0]:%.5f\n acc[1]:%.5f\n acc[2]:%.5f\n" %(acc[0],acc[1] ,acc[2]))
+                
             try :
-                self.qp_client(acc)
-                print("qp:"+str(acc))
+                
+                res = self.qp_client(acc)
+                now_acc = acc
+                acc = res.ecbf_output
+                print("after qp:\n acc[0]:%.5f\n acc[1]:%.5f\n acc[2]:%.5f\n" %(acc[0],acc[1] ,acc[2]))
             except:
-                print("fail to call qp:"+str(acc))
+                print("fail to call qp!")
+            print("-----------")
             self.commander(acc)
             rate.sleep() 
 
