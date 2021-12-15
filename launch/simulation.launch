@@ -4,5 +4,6 @@
     <node pkg="ecbf_lidar" type="key_control.py" name="key_control" output="screen" />
     <node pkg="ecbf_lidar" type="test_qp.py" name="test_qp" output="screen" />
     <node pkg="ecbf_lidar" type="take_off.py" name="take_off" output="screen" />
-
+    <include file="$(find ecbf_lidar)/launch/px4_sim.launch">
+    </include>
 </launch>

@@ -13,6 +13,10 @@ from rospy.rostime import Time
 from geometry_msgs.msg import PoseStamped
 from ecbf_lidar.srv import *
 
+DEL_V = 0.3
+upper_v = 4
+lower_v = -4
+
 class ConstraintGenerator:
     def __init__(self):
         rospy.init_node("osqp_solver")
@@ -22,7 +26,7 @@ class ConstraintGenerator:
         self.rate = rospy.Rate(20)
         self.pcl = None
         self.lp = lg.LaserProjection()
-        self.safe_dis = 1.0
+        self.safe_dis = 1.2
 
         self.pos = None
         self.vel = None
@@ -38,8 +42,11 @@ class ConstraintGenerator:
         self.k2 = 2
 
         self.pos = [0.0,0.0,0.0]
-        self.vel = [1.0,1.0,0.0]
+        self.last_pos = [0.0,0.0,0.0]
+        self.vel = [0.0,0.0,0.0]
         self.last_vel = [0.0,0.0,0.0]
+        self.last_time = 0.0
+        self.now_time = 0.0
 
         self._initialize()
 
@@ -56,8 +63,8 @@ class ConstraintGenerator:
         downpcl = pcl.voxel_down_sample(voxel_size=0.1)
 
         pcl = np.asarray(downpcl.points)
-        pcl = pcl[np.abs(pcl[:, 0]) < 1.5]
-        pcl = pcl[np.abs(pcl[:, 1]) < 1.5]
+        pcl = pcl[np.abs(pcl[:, 0]) < 1.8]
+        pcl = pcl[np.abs(pcl[:, 1]) < 1.8]
         pcl = pcl[np.abs(pcl[:, 2]) < 0.5]
         pcl = -pcl
         print(pcl)
@@ -68,45 +75,46 @@ class ConstraintGenerator:
         h = 2*vel_sum_square*np.ones(len(pcl)) +\
             self.k1*(dis_sum_square-(self.safe_dis*self.safe_dis)*np.ones(len(pcl)))+\
             self.k2*2*(pcl.dot(self.vel))
+
         print(g.shape)
         print(h.shape)
+
         self.Q = matrix(-0.5*u[0:3],tc='d')
         self.G = matrix(g,tc='d')
         self.H = matrix(h,tc='d')
         #solvers.options['feastol']=1e-5
         sol=solvers.coneqp(self.P, self.Q, self.G, self.H)
         u_star = sol['x']
-        print(u_star)
         #print(sol['s'])
         return np.array([u_star[0], u_star[1], u_star[2]])
 
     def pos_cb(self, data):
         if self.pose_init_flag == False:
-            now_time = data.header.stamp.toSec()
+            self.now_time = data.header.stamp.to_sec()
             self.pos[0] = data.pose.position.x
             self.pos[1] = data.pose.position.y
             self.pos[2] = data.pose.position.z
-            self.last_pos[0] = pos[0]
-            self.last_pos[1] = pos[1]
-            self.last_pos[2] = pos[2]
-            self.last_time = now_time
-            self.pose_init_flag = true
+            self.last_pos[0] = self.pos[0]
+            self.last_pos[1] = self.pos[1]
+            self.last_pos[2] = self.pos[2]
+            self.last_time = self.now_time
+            self.pose_init_flag = True
 
         else :
-            now_time = data.header.stamp.toSec()
-            delta_time = now_time - last_time
+            self.now_time = data.header.stamp.to_sec()
+            delta_time = self.now_time - self.last_time
 
             self.pos[0] = data.pose.position.x
             self.pos[1] = data.pose.position.y
             self.pos[2] = data.pose.position.z
 
-            self.vel[0] =(pos[0] - last_pos[0])/0.0083
-            self.vel[1] =(pos[1] - last_pos[1])/0.0083
-            self.vel[2] =(pos[2] - last_pos[2])/0.0083
+            self.vel[0] =(self.pos[0] - self.last_pos[0])/0.0083
+            self.vel[1] =(self.pos[1] - self.last_pos[1])/0.0083
+            self.vel[2] =(self.pos[2] - self.last_pos[2])/0.0083
 
-            self.vel[0] = self.fix_vel(vel[0],last_vel[0])
-            self.vel[1] = self.fix_vel(vel[1],last_vel[1])
-            self.vel[2] = self.fix_vel(vel[2],last_vel[2])
+            self.vel[0] = self.fix_vel(self.vel[0],self.last_vel[0])
+            self.vel[1] = self.fix_vel(self.vel[1],self.last_vel[1])
+            self.vel[2] = self.fix_vel(self.vel[2],self.last_vel[2])
 
             self.last_vel[0] = self.vel[0]
             self.last_vel[1] = self.vel[1]
@@ -114,10 +122,11 @@ class ConstraintGenerator:
             self.last_pos[0] = self.pos[0]
             self.last_pos[1] = self.pos[1]
             self.last_pos[2] = self.pos[2]
-            last_time = now_time
+            self.last_time = self.now_time
+            
         return 0
 
-    def fix_vel(now_vel,old_vel):
+    def fix_vel(self,now_vel,old_vel):
         new_vel = old_vel
         delta_vel = 0.0
         delta_vel = now_vel-old_vel
@@ -128,8 +137,16 @@ class ConstraintGenerator:
                 new_vel -=DEL_V  
         else:
             new_vel = now_vel
-        new_vel = bound(new_vel)
+        new_vel = self.bound(new_vel)
         return new_vel
+
+    def bound(self, v):
+        if v>upper_v :
+            v = upper_v
+        elif v<lower_v:
+            v = lower_v
+        
+        return v
 
     def qp_handler(self,data):
         print("get data")
@@ -137,6 +154,7 @@ class ConstraintGenerator:
         for i in range(3):
             u[i] = data.desire_input[i] 
         new_u = self.contraint_solver(u)
+        print("vel:\n vel[0]:%.5f\n vel[1]:%.5f\n vel[2]:%.5f\n" %(self.vel[0],self.vel[1] ,self.vel[2]))
         return [new_u]
 
     def process(self):

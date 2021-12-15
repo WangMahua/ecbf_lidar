@@ -12,7 +12,6 @@ from geometry_msgs.msg import Quaternion
 import math
 #import getch
 import sys
-import keyboard
 from std_msgs.msg import String #String message 
 from std_msgs.msg import Int8
 from ecbf_lidar.srv import *

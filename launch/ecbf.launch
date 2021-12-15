@@ -1,8 +1,6 @@
 <launch>
 
-
     <node pkg="ecbf_lidar" type="ecbf_controller" name="ecbf_controller" output="screen" />
     <node pkg="ecbf_lidar" type="osqp_solver.py" name="osqp_solver" output="screen" />
-
 
 </launch>

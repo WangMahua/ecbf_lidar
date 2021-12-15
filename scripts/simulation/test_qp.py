@@ -63,9 +63,9 @@ class ConstraintGenerator:
         downpcl = pcl.voxel_down_sample(voxel_size=0.1)
 
         pcl = np.asarray(downpcl.points)
-        # pcl = pcl[np.abs(pcl[:, 0]) < 1.5]
-        # pcl = pcl[np.abs(pcl[:, 1]) < 1.5]
-        # pcl = pcl[np.abs(pcl[:, 2]) < 0.5]
+        pcl = pcl[np.abs(pcl[:, 0]) < 2.5]
+        pcl = pcl[np.abs(pcl[:, 1]) < 2.5]
+
         pcl = -pcl
         # print(pcl)
         dis_sum_square=np.square(pcl).sum(axis=1)
