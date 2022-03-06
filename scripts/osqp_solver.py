@@ -63,39 +63,37 @@ class ConstraintGenerator:
 		print("do not get lidar data")
 		return np.array([u[0], u[1], u[2]])
 	else:
-		self.pcl = o3d.geometry.PointCloud()
-		if self.pcl.has_points() == False:
-			return np.array([u[0], u[1], u[2]])
-		else:
-			pcl.points = o3d.utility.Vector3dVector(self.pcl)
-			downpcl = pcl.voxel_down_sample(voxel_size=0.1)
-			pcl = np.asarray(downpcl.points)
+		pcl = o3d.geometry.PointCloud()
+		pcl.points = o3d.utility.Vector3dVector(self.pcl)
+		
+		downpcl = pcl.voxel_down_sample(voxel_size=0.1)
+		pcl = np.asarray(downpcl.points)
 
-			print(pcl.shape)
-			pcl = pcl[np.abs(pcl[:, 0]) < 1.8]
-			pcl = pcl[np.abs(pcl[:, 1]) < 1.8]
-			pcl = pcl[np.abs(pcl[:, 2]) < 0.5]
-			pcl = -pcl
-			print(pcl)
-			dis_sum_square=np.square(pcl).sum(axis=1)
-			vel_sum_square=np.square(self.vel).sum(axis=0)
+		print(pcl.shape)
+		pcl = pcl[np.abs(pcl[:, 0]) < 1.2]
+		pcl = pcl[np.abs(pcl[:, 1]) < 1.2]
+		pcl = pcl[np.abs(pcl[:, 2]) < 0.5]
+		pcl = -pcl
+		#print(pcl)
+		dis_sum_square=np.square(pcl).sum(axis=1)
+		vel_sum_square=np.square(self.vel).sum(axis=0)
 
-			g = -2*pcl
-			h = 2*vel_sum_square*np.ones(len(pcl)) +\
-			    self.k1*(dis_sum_square-(self.safe_dis*self.safe_dis)*np.ones(len(pcl)))+\
-			    self.k2*2*(pcl.dot(self.vel))
+		g = -2*pcl
+		h = 2*vel_sum_square*np.ones(len(pcl)) +\
+		    self.k1*(dis_sum_square-(self.safe_dis*self.safe_dis)*np.ones(len(pcl)))+\
+		    self.k2*2*(pcl.dot(self.vel))
 
-			#print(g.shape)
-			#print(h.shape)
+		#print(g.shape)
+		#print(h.shape)
 
-			self.Q = matrix(-0.5*u[0:3],tc='d')
-			self.G = matrix(g,tc='d')
-			self.H = matrix(h,tc='d')
-			#solvers.options['feastol']=1e-5
-			sol=solvers.coneqp(self.P, self.Q, self.G, self.H)
-			u_star = sol['x']
-			#print(sol['s'])
-			return np.array([u_star[0], u_star[1], u_star[2]])
+		self.Q = matrix(-0.5*u[0:3],tc='d')
+		self.G = matrix(g,tc='d')
+		self.H = matrix(h,tc='d')
+		#solvers.options['feastol']=1e-5
+		sol=solvers.coneqp(self.P, self.Q, self.G, self.H)
+		u_star = sol['x']
+		#print(sol['s'])
+		return np.array([u_star[0], u_star[1], u[2]]) # do not constraint z domain 
 
     def pos_cb(self, data):
         if self.pose_init_flag == False:
@@ -158,12 +156,14 @@ class ConstraintGenerator:
         return v
 
     def qp_handler(self,data):
-        print("get data")
+        print("call service")
         u =np.array([0.0,0.0,0.0])
         for i in range(3):
             u[i] = data.desire_input[i] 
         new_u = self.contraint_solver(u)
-        print("vel:\n vel[0]:%.5f\n vel[1]:%.5f\n vel[2]:%.5f\n" %(self.vel[0],self.vel[1] ,self.vel[2]))
+        print("vel:\n vel[0]:%.5f\t vel[1]:%.5f\t vel[2]:%.5f\t" %(self.vel[0],self.vel[1] ,self.vel[2]))
+        print("u:\n u[0]:%.5f\t u[1]:%.5f\t u[2]:%.5f\t" %(u[0],u[1] ,u[2]))
+        print("new_u:\n new_u[0]:%.5f\t new_u[1]:%.5f\t new_u[2]:%.5f\t" %(new_u[0],new_u[1] ,new_u[2]))
         return [new_u]
 
     def process(self):

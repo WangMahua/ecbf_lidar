@@ -120,7 +120,7 @@ void ecbf::debug_pub(){
 	/* debug */
 	geometry_msgs::Twist debug_rc;
 	geometry_msgs::Twist debug_qp;
-/*
+	/*
 	debug_rc.linear.x = rc.roll;
 	debug_rc.linear.y = rc.pitch;
 	debug_rc.linear.z = rc.throttle;
@@ -313,7 +313,7 @@ int lidar_thread_entry(){
 
 					ecbf_process.get_desire_rc_input(rc);
 					ecbf_process.process();
-					//ecbf_process.get_sol(pub_to_controller);
+					ecbf_process.get_sol(pub_to_controller);
 		
 					//send sol to uart
 					//send_pose_to_serial(roll_d,pitch_d,throttle_d,0.0,0.0,0.0,0.0,0.0,0.0,0.0);
