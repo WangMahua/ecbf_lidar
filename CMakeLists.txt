@@ -254,16 +254,38 @@ target_link_libraries(lidar PUBLIC
   ${catkin_LIBRARIES} 
 )
 
+add_library(lidar_debug 
+   src/thread/lidar_debug.cpp
+)
+
+target_link_libraries(lidar_debug PUBLIC
+)
+
+target_link_libraries(lidar_debug PUBLIC
+  osqp::osqp 
+  ${catkin_LIBRARIES} 
+)
+
 add_executable(ecbf_controller
   src/main.cpp
   src/serial.cpp
   src/thread/vel.cpp
   src/thread/uart.cpp
 )
+add_executable(ecbf_debug_controller
+  src/main_debug.cpp
+  src/serial.cpp
+  src/thread/vel_debug.cpp
+)
 
 target_link_libraries(ecbf_controller PUBLIC
   lidar
 )
+
+target_link_libraries(ecbf_debug_controller PUBLIC
+  lidar_debug
+)
+
 
 add_executable(odom_
   src/odometry.cpp

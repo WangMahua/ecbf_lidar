@@ -1,3 +1,4 @@
+
 #include "ros/ros.h"
 #include <iostream>
 #include <serial.hpp>
@@ -19,7 +20,6 @@
 
 
 #include "vel.h"
-#include "uart.h"
 #include "Eigen/Core"
 #include "Eigen/SparseCore"
 #include "vector"
@@ -59,8 +59,9 @@ float per2thrust_coeff[6] = {930.56,-3969,4983.2,-1664.5,482.08,-7.7146};
 float thrust2per_coeff[6] = {-1.11e-15,-3.88e-12,1.09e-8,-8.63e-6,3.62e-3,0};
 mutex imu_mutex;
 imu_t imu;
-uint8_t rc_ch7;
+int rc_ch7;
 rc_data rc;
+int m;
 
 class ecbf{
 private:
@@ -76,7 +77,7 @@ private:
 
 public:
 	ecbf();
-	void get_desire_rc_input(float,float,float,float,int);
+	void get_desire_rc_input(float,float,float,float,float);
 	void get_desire_rc_input(rc_data);
 	float bound_rc(float);
 	void debug_pub();
@@ -93,12 +94,11 @@ ecbf::ecbf(){
 	debug_qp_pub = n.advertise<geometry_msgs::Twist>("qp_info", 1); 
 }
 void ecbf::get_desire_rc_input(float rc_roll,float rc_pitch,\
-	float rc_yaw,float rc_throttle,int rc_mode){
+	float rc_yaw,float rc_throttle,float rc_mode){
 	desired_rc_input[0] = rc_roll;
 	desired_rc_input[1] = rc_pitch;
 	desired_rc_input[2] = rc_yaw;
 	desired_rc_input[3] = rc_throttle;
-
 	if(rc_mode>1.1){
 		ecbf_mode = true ; 
 	}else{
@@ -128,7 +128,6 @@ void ecbf::debug_pub(){
 	debug_rc.angular.y = pitch_d;
 	debug_rc.angular.z = throttle_d;
 	debug_rc_pub.publish(debug_rc);
-
 	debug_qp.linear.x = acc[0];
 	debug_qp.linear.y = acc[1];
 	debug_qp.linear.z = acc[2];
@@ -176,7 +175,6 @@ void ecbf::process(){
 		}
 
 	}else{
-		cout<< "ecbf not trigger!\n";
 		rc_modified[0] = desired_rc_input[0] ; //roll
 		rc_modified[1] = desired_rc_input[1] ; //pitch
 		rc_modified[2] = desired_rc_input[3] ; //throttle
@@ -267,7 +265,7 @@ int imu_decode(uint8_t *buf){
 	rc.yaw = yaw; //up
 	rc.throttle = throttle;
 	rc.mode = rc_ch7;
-
+	
 	return 0;
 }
 
@@ -290,7 +288,7 @@ void imu_buf_push(uint8_t c){
 }
 
 
-int lidar_thread_entry(){
+int lidar_thread_debug_entry(){
 	char c;
 	imu.buf_pos = 0;
 
@@ -302,7 +300,6 @@ int lidar_thread_entry(){
 			imu_buf_push(c); 
 			if(imu.buf[0]=='@' && imu.buf[IMU_SERIAL_MSG_SIZE-1] == '+'){
 				if(imu_decode(imu.buf)==0){
-					
 					cout<<"rc info:"<<endl;
 					cout<<"rc.mode: "<<rc.mode<<"\n";
 					cout<<"rc.roll: "<<rc.roll<<"\n";
@@ -310,11 +307,13 @@ int lidar_thread_entry(){
 					cout<<"rc.yaw: "<<rc.yaw<<"\n";
 					cout<<"rc.throttle: "<<rc.throttle<<"\n";
 					cout<<"==="<<endl;
-
+					//ecbf_process.get_desire_rc_input(rc.roll,rc.pitch,rc.yaw,rc.throttle,rc.mode);
 					ecbf_process.get_desire_rc_input(rc);
+/*
 					ecbf_process.process();
-					//ecbf_process.get_sol(pub_to_controller);
-		
+
+					ecbf_process.get_sol(pub_to_controller);
+		*/
 					//send sol to uart
 					//send_pose_to_serial(roll_d,pitch_d,throttle_d,0.0,0.0,0.0,0.0,0.0,0.0,0.0);
 					//send_pose_to_serial(imu.acc[0],imu.acc[1],imu.gyrop[0],0.0,0.0,0.0,0.0,0.0,0.0,0.0);
@@ -324,3 +323,5 @@ int lidar_thread_entry(){
 	}
 	return 0;
 }
+
+

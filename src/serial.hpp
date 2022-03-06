@@ -1,4 +1,3 @@
-
 #ifndef __SERIAL_HPP__
 #define __SERIAL_HPP__
 
