@@ -28,7 +28,7 @@
 #define upper_rc 35
 #define lower_rc -35
 
-#define PATH_MODE 1 /* 0:box 1:tube */
+#define PATH_MODE 0 /* 0:box 1:tube */
 
 #define K1 5
 #define K2 3
@@ -120,22 +120,23 @@ void ecbf::debug_pub(){
 	/* debug */
 	geometry_msgs::Twist debug_rc;
 	geometry_msgs::Twist debug_qp;
-	/*
+	
 	debug_rc.linear.x = rc.roll;
 	debug_rc.linear.y = rc.pitch;
 	debug_rc.linear.z = rc.throttle;
 	debug_rc.angular.x = roll_d;
 	debug_rc.angular.y = pitch_d;
 	debug_rc.angular.z = throttle_d;
+
 	debug_rc_pub.publish(debug_rc);
 
-	debug_qp.linear.x = acc[0];
-	debug_qp.linear.y = acc[1];
-	debug_qp.linear.z = acc[2];
-	debug_qp.angular.x = acc_d[0];
-	debug_qp.angular.y = acc_d[1];
-	debug_qp.angular.z = acc_d[2];
-	*/
+	debug_qp.linear.x = desired_acc[0];
+	debug_qp.linear.y = desired_acc[1];
+	debug_qp.linear.z = desired_acc[2];
+	debug_qp.angular.x = ecbf_acc[0];
+	debug_qp.angular.y = ecbf_acc[1];
+	debug_qp.angular.z = ecbf_acc[2];
+	
 	debug_qp_pub.publish(debug_qp);
 }
 
@@ -165,7 +166,8 @@ void ecbf::process(){
 
 			ecbf_acc[0] = srv.response.ecbf_output[0] ;
 			ecbf_acc[1] = srv.response.ecbf_output[1] ;
-			ecbf_acc[2] = srv.response.ecbf_output[2] ;
+			//ecbf_acc[2] = srv.response.ecbf_output[2] ;
+			ecbf_acc[2] = desired_rc_input[3]; //do not change throttle
 			rc_cal(rc_modified);
 
 		}else{
@@ -181,13 +183,14 @@ void ecbf::process(){
 		rc_modified[1] = desired_rc_input[1] ; //pitch
 		rc_modified[2] = desired_rc_input[3] ; //throttle
 	}
+	debug_pub();
 }
 
 void ecbf::acc_cal(){
 	float _roll,_pitch,_yaw,_throttle;
 	_roll = -desired_rc_input[0]*M_PI/180.0;
 	_pitch = -desired_rc_input[1]*M_PI/180.0;
-	_yaw = -desired_rc_input[2]*M_PI/180.0;
+	_yaw = -desired_rc_input[2]*M_PI/180.0; //set 0
 	_throttle = desired_rc_input[4];
 
 	float force = 0 ;
@@ -264,7 +267,7 @@ int imu_decode(uint8_t *buf){
 
 	rc.roll = roll; //east
 	rc.pitch = pitch; //north
-	rc.yaw = yaw; //up
+	rc.yaw = 0; //up //do not change yaw angle
 	rc.throttle = throttle;
 	rc.mode = rc_ch7;
 
@@ -310,12 +313,23 @@ int lidar_thread_entry(){
 					cout<<"rc.yaw: "<<rc.yaw<<"\n";
 					cout<<"rc.throttle: "<<rc.throttle<<"\n";
 					cout<<"==="<<endl;
+					
+					ros::Time begin_time = ros::Time::now();
 
 					ecbf_process.get_desire_rc_input(rc);
 					ecbf_process.process();
 					ecbf_process.get_sol(pub_to_controller);
-		
+					pub_to_controller[2]=rc.throttle;
+
+					ros::Time now_time = ros::Time::now();
+					float clustering_time = 0 ;
+ 					clustering_time = (now_time - begin_time).toSec();
+					cout << "hz:"<< 1/clustering_time <<endl; //hz test
+					
+					
+					
 					//send sol to uart
+					send_pose_to_serial(pub_to_controller[0],pub_to_controller[1],rc.throttle,0.0,0.0,0.0,0.0,0.0,0.0,0.0);
 					//send_pose_to_serial(roll_d,pitch_d,throttle_d,0.0,0.0,0.0,0.0,0.0,0.0,0.0);
 					//send_pose_to_serial(imu.acc[0],imu.acc[1],imu.gyrop[0],0.0,0.0,0.0,0.0,0.0,0.0,0.0);
 				}

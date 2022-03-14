@@ -23,11 +23,11 @@ class ConstraintGenerator:
         self.pcl_sub = rospy.Subscriber("/scan", LaserScan, self.scan_cb)
         self.pos_sub = rospy.Subscriber("/vrpn_client_node/MAV1/pose", PoseStamped, self.pos_cb)
         self.qp_server = rospy.Service('qp', qp, self.qp_handler)
-        self.rate = rospy.Rate(20)
+        self.rate = rospy.Rate(100)
         self.pcl = None
 	self.pcl_flag = False
         self.lp = lg.LaserProjection()
-        self.safe_dis = 1.2
+        self.safe_dis = 1.0
 
         self.pos = None
         self.vel = None
@@ -66,12 +66,12 @@ class ConstraintGenerator:
 		pcl = o3d.geometry.PointCloud()
 		pcl.points = o3d.utility.Vector3dVector(self.pcl)
 		
-		downpcl = pcl.voxel_down_sample(voxel_size=0.1)
+		downpcl = pcl.voxel_down_sample(voxel_size=2)
 		pcl = np.asarray(downpcl.points)
 
 		print(pcl.shape)
-		pcl = pcl[np.abs(pcl[:, 0]) < 1.2]
-		pcl = pcl[np.abs(pcl[:, 1]) < 1.2]
+		pcl = pcl[np.abs(pcl[:, 0]) < 1.0]
+		pcl = pcl[np.abs(pcl[:, 1]) < 1.0]
 		pcl = pcl[np.abs(pcl[:, 2]) < 0.5]
 		pcl = -pcl
 		#print(pcl)
@@ -89,7 +89,8 @@ class ConstraintGenerator:
 		self.Q = matrix(-0.5*u[0:3],tc='d')
 		self.G = matrix(g,tc='d')
 		self.H = matrix(h,tc='d')
-		#solvers.options['feastol']=1e-5
+		solvers.options['feastol']=1e-4
+		solvers.options['maxiters']=80
 		sol=solvers.coneqp(self.P, self.Q, self.G, self.H)
 		u_star = sol['x']
 		#print(sol['s'])
