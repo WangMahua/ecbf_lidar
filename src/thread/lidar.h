@@ -13,21 +13,6 @@ extern double pitch_d;
 extern double throttle_d;
 extern double pub_to_controller[3];
 
-
-typedef struct {
-	
-	float acc[3];
-
-	float gyrop[3];
-
-	volatile int buf_pos;
-
-	double deviation_acc;	
-
-	uint8_t buf[];
-	
-} imu_t ;
-
 typedef struct {
 	
 	float roll;
@@ -41,12 +26,6 @@ typedef struct {
 	int mode;
 	
 } rc_data ;
-
-uint8_t generate_imu_checksum_byte(uint8_t *, int);
-
-int imu_decode(uint8_t *);
-
-void imu_buf_push(uint8_t);
 
 int lidar_thread_entry();
 
