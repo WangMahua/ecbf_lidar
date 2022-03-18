@@ -16,6 +16,9 @@
 #include "sensor_msgs/PointCloud2.h"
 #include "sensor_msgs/point_cloud_conversion.h"
 #include "ecbf_lidar/qp.h"
+#include "ecbf_lidar/acc_compare.h"
+#include "ecbf_lidar/rc_compare.h"
+
 
 
 #include "vel.h"
@@ -69,8 +72,8 @@ public:
 ecbf::ecbf(){
 	//ros 
 	client = n.serviceClient<ecbf_lidar::qp>("qp");
-	debug_rc_pub = n.advertise<geometry_msgs::Twist>("rc_info", 1); 
-	debug_qp_pub = n.advertise<geometry_msgs::Twist>("qp_info", 1); 
+	debug_rc_pub = n.advertise<ecbf_lidar::rc_compare>("rc_info", 1); 
+	debug_qp_pub = n.advertise<ecbf_lidar::acc_compare>("qp_info", 1); 
 }
 void ecbf::get_desire_rc_input(float rc_roll,float rc_pitch,\
 	float rc_yaw,float rc_throttle,int rc_mode){
@@ -98,24 +101,24 @@ void ecbf::get_desire_rc_input(rc_data rc_){
 }
 void ecbf::debug_pub(){ 
 	/* debug */
-	geometry_msgs::Twist debug_rc;
-	geometry_msgs::Twist debug_qp;
+	ecbf_lidar::rc_compare debug_rc;
+	ecbf_lidar::acc_compare debug_qp;
 	
-	debug_rc.linear.x = user_rc_input[0];
-	debug_rc.linear.y = user_rc_input[1];
-	debug_rc.linear.z = user_rc_input[3];
-	debug_rc.angular.x = ecbf_rc[0];
-	debug_rc.angular.y = ecbf_rc[1];
-	debug_rc.angular.z = ecbf_rc[2];
+	debug_rc.origin_roll = user_rc_input[0];
+	debug_rc.origin_pitch = user_rc_input[1];
+	debug_rc.origin_throttle = user_rc_input[3];
+	debug_rc.ecbf_roll = ecbf_rc[0];
+	debug_rc.ecbf_pitch = ecbf_rc[1];
+	debug_rc.ecbf_throttle = ecbf_rc[2];
 
 	debug_rc_pub.publish(debug_rc);
 
-	debug_qp.linear.x = user_acc[0];
-	debug_qp.linear.y = user_acc[1];
-	debug_qp.linear.z = user_acc[2];
-	debug_qp.angular.x = ecbf_acc[0];
-	debug_qp.angular.y = ecbf_acc[1];
-	debug_qp.angular.z = ecbf_acc[2];
+	debug_qp.origin_acc_x = user_acc[0];
+	debug_qp.origin_acc_y = user_acc[1];
+	debug_qp.origin_acc_z = user_acc[2];
+	debug_qp.ecbf_acc_x = ecbf_acc[0];
+	debug_qp.ecbf_acc_y = ecbf_acc[1];
+	debug_qp.ecbf_acc_z = ecbf_acc[2];
 	
 	debug_qp_pub.publish(debug_qp);
 }

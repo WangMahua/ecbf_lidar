@@ -60,12 +60,12 @@ find_package(osqp REQUIRED)
 ##   * uncomment the generate_messages entry below
 ##   * add every package in MSG_DEP_SET to generate_messages(DEPENDENCIES ...)
 
-## Generate messages in the 'msg' folder
-# add_message_files(
-#   FILES
-#   Message1.msg
-#   Message2.msg
-# )
+# Generate messages in the 'msg' folder
+add_message_files(
+  FILES
+  acc_compare.msg
+  rc_compare.msg
+)
 
 # Generate services in the 'srv' folder
 add_service_files(
@@ -255,14 +255,12 @@ target_link_libraries(lidar PUBLIC
 )
 
 
-
 add_executable(ecbf_controller
   src/main.cpp
   src/serial.cpp
   src/thread/vel.cpp
   src/thread/uart.cpp
 )
-
 
 target_link_libraries(ecbf_controller PUBLIC
   lidar
@@ -278,3 +276,4 @@ target_link_libraries(odom_
 )
 
 
+add_dependencies(ecbf_controller ${catkin_EXPORTED_TARGETS})
