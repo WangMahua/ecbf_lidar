@@ -10,10 +10,12 @@
 #include <geometry_msgs/Twist.h>
 
 using namespace std;
+std::mutex g_mutex;
 
 imu_t imu;
-float rc_value[4]; // roll pitch yaw throttle 
-int rc_ecbf_mode;
+volatile float rc_value[4] = {0.0,0.0,0.0,0.0}; // roll pitch yaw throttle 
+volatile int rc_ecbf_mode = 0;
+uint8_t rc_ch7 = 0;
 
 uint8_t generate_imu_checksum_byte(uint8_t *payload, int payload_count){
 	uint8_t result = IMU_CHECKSUM_INIT_VAL;
@@ -33,7 +35,7 @@ int imu_decode(uint8_t *buf){
 		return 1; //error detected
 	}
 	float roll, pitch, yaw, throttle;
-    int rc_ch7;
+    
 
 	memcpy(&roll, &buf[2], sizeof(float)); //in ned coordinate system
 	memcpy(&pitch, &buf[6], sizeof(float));
@@ -74,20 +76,30 @@ void imu_buf_push(uint8_t c){
 /* decode rc value from ncrl-flight-control board*/
 int uart_thread_entry(){
 	ros::NodeHandle n;
-    ros::Rate loop_rate(100);
+    	ros::Rate loop_rate(100);
 	char c;
 	imu.buf_pos = 0;
 
 	cout<<"start\n";
+	
 	while(ros::ok()){
+		g_mutex.lock();
 		if(serial_getc(&c) != -1) {
 			imu_buf_push(c); 
 			if(imu.buf[0]=='@' && imu.buf[IMU_SERIAL_MSG_SIZE-1] == '+'){
 				if(imu_decode(imu.buf)==0){
-					
+					cout<<"rc info in uart:"<<endl;
+					cout<<"rc.mode: "<<rc_ecbf_mode<<"\n";
+					cout<<"rc.roll: "<<rc_value[0]<<"\n";
+					cout<<"rc.pitch: "<<rc_value[1]<<"\n";
+					cout<<"rc.yaw: "<<rc_value[2]<<"\n";
+					cout<<"rc.throttle: "<<rc_value[3]<<"\n";
+					cout<<"==="<<endl;
+					//rate.sleep();			
 				}
 			}
 		}
+		g_mutex.unlock();
 	}
 	return 0;
 

@@ -18,8 +18,8 @@ typedef struct {
 } imu_t ;
 
 /* extern var will send to lidar.cpp */
-extern float rc_value[4]; // roll pitch yaw throttle 
-extern int rc_ecbf_mode;
+extern volatile float rc_value[4]; // roll pitch yaw throttle 
+extern volatile int rc_ecbf_mode;
 
 int uart_thread_entry();
 

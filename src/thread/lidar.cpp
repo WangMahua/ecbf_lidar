@@ -43,6 +43,7 @@ float per2thrust_coeff[6] = {930.56,-3969,4983.2,-1664.5,482.08,-7.7146};
 float thrust2per_coeff[6] = {-1.11e-15,-3.88e-12,1.09e-8,-8.63e-6,3.62e-3,0};
 imu_t imu;
 uint8_t rc_ch7;
+std::mutex l_mutex;
 
 
 class ecbf{
@@ -226,16 +227,22 @@ int lidar_thread_entry(){
 	char c;
 	imu.buf_pos = 0;
 	ecbf ecbf_process;
+	uint8_t last_ecbf_mode = 0;
 
 	while(ros::ok()){
-
+		l_mutex.lock();
+		if(rc_ecbf_mode>2.1){
+			rc_ecbf_mode = last_ecbf_mode;
+		}
 		rc_data rc = { .roll = rc_value[0], \
 						.pitch = rc_value[1], \
 						.yaw = rc_value[2], \
 						.throttle = rc_value[3], \
 						.mode = rc_ecbf_mode };
+		last_ecbf_mode = rc_ecbf_mode;
+		
 
-		cout<<"rc info:"<<endl;
+		cout<<"rc info in lidar:"<<endl;
 		cout<<"rc.mode: "<<rc.mode<<"\n";
 		cout<<"rc.roll: "<<rc.roll<<"\n";
 		cout<<"rc.pitch: "<<rc.pitch<<"\n";
@@ -246,6 +253,7 @@ int lidar_thread_entry(){
 		ros::Time begin_time = ros::Time::now();
 
 		ecbf_process.get_desire_rc_input(rc);
+		l_mutex.unlock();
 		ecbf_process.process();
 		ecbf_process.get_sol(pub_to_controller);
 		pub_to_controller[2]=rc.throttle;
