@@ -25,8 +25,6 @@ find_package(catkin REQUIRED COMPONENTS
   pcl_ros
 )
 
-find_package(osqp REQUIRED)
-
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
 
@@ -131,11 +129,6 @@ catkin_package(
 
 ##set() is use to assign 
 
-set(INC_FOR_OSQP
-  /home/mahua/library/osqp-cpp/include
-)
-
-
 set(INC
     ./ 
     ./src
@@ -145,18 +138,14 @@ set(INC
 include_directories(
   include
   ${catkin_INCLUDE_DIRS}
-  ${osqp_INCLUDE_DIRS}
   ${ecbf_uart_INCLUDE_DIRS}
   ${INC}
-  ${INC_FOR_OSQP}
 )
 
 ## Declare a C++ library
 add_library(${PROJECT_NAME}
   src/main.cpp
-  src/serial.cpp
-  src/thread/vel.cpp
-  src/thread/uart.cpp
+  src/thread/main_thread.cpp
 )
 
 
@@ -240,40 +229,14 @@ add_library(${PROJECT_NAME}
 ## Add folders to be run by python nosetests
 # catkin_add_nosetests(test)
 
-
-
-add_library(lidar 
-   src/thread/lidar.cpp
-)
-
-target_link_libraries(lidar PUBLIC
-)
-
-target_link_libraries(lidar PUBLIC
-  osqp::osqp 
-  ${catkin_LIBRARIES} 
-)
-
-
 add_executable(ecbf_controller
-  src/main.cpp
+  src/thread/main_thread.cpp
   src/serial.cpp
-  src/thread/vel.cpp
-  src/thread/uart.cpp
+  src/main.cpp
 )
 
 target_link_libraries(ecbf_controller PUBLIC
-  lidar
+  ${catkin_LIBRARIES}
 )
-
-
-add_executable(odom_
-  src/odometry.cpp
-)
-
-target_link_libraries(odom_
-  ${catkin_LIBRARIES} 
-)
-
 
 add_dependencies(ecbf_controller ${catkin_EXPORTED_TARGETS})

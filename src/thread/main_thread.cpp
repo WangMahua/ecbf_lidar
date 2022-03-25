@@ -1,31 +1,13 @@
 #include "ros/ros.h"
 #include <iostream>
 #include <serial.hpp>
-#include <sensor_msgs/Imu.h>
-#include <std_msgs/Int32.h>
-#include <lidar.h>
 #include <mutex>
 #include <cmath>
 
-#include <geometry_msgs/Twist.h>
-#include <geometry_msgs/Point32.h>
-#include "tf/transform_listener.h"
-#include "laser_geometry/laser_geometry.h"
-#include <sensor_msgs/LaserScan.h>
-#include "sensor_msgs/PointCloud.h"
-#include "sensor_msgs/PointCloud2.h"
-#include "sensor_msgs/point_cloud_conversion.h"
 #include "ecbf_lidar/qp.h"
 #include "ecbf_lidar/acc_compare.h"
 #include "ecbf_lidar/rc_compare.h"
-
-
-
-#include "vel.h"
-#include "uart.h"
-#include "Eigen/Core"
-#include "Eigen/SparseCore"
-#include "vector"
+#include "main_thread.h"
 
 /* This two value is the maximun and minimun value for rc */
 #define upper_rc 35
@@ -33,7 +15,7 @@
 
 /* DEBUG_FLAG is a extra lock for user. if you just want to check */
 /* the value calculate from ecbf and do not want to apply it to f-*/
-/* light control board, you shouls set this flag as 1.            */
+/* light control board, you should set this flag as 1.            */
 #define DEBUG_FLAG 0
 
 using namespace std;
@@ -44,7 +26,10 @@ float thrust2per_coeff[6] = {-1.11e-15,-3.88e-12,1.09e-8,-8.63e-6,3.62e-3,0};
 imu_t imu;
 uint8_t rc_ch7;
 std::mutex l_mutex;
+std::mutex g_mutex;
 
+float rc_value[4];
+int rc_ecbf_mode;
 
 class ecbf{
 private:
@@ -100,6 +85,7 @@ void ecbf::get_desire_rc_input(rc_data rc_){
 		ecbf_mode = false ; 
 	}
 }
+
 void ecbf::debug_pub(){ 
 	/* debug */
 	ecbf_lidar::rc_compare debug_rc;
@@ -220,6 +206,91 @@ void ecbf::get_sol(double* d){
 	d[0] = ecbf_rc[0];
 	d[1] = ecbf_rc[1];
 	d[2] = ecbf_rc[2];
+}
+
+//** uart **//
+uint8_t generate_imu_checksum_byte(uint8_t *payload, int payload_count){
+	uint8_t result = IMU_CHECKSUM_INIT_VAL;
+
+	int i;
+	for(i = 0; i < payload_count; i++)
+		result ^= payload[i];
+
+	return result;
+}
+
+int imu_decode(uint8_t *buf){
+	static float x_array_uart[100];
+	uint8_t recv_checksum = buf[1];
+	uint8_t checksum = generate_imu_checksum_byte(&buf[3], IMU_SERIAL_MSG_SIZE - 3);
+	if(checksum != recv_checksum) {
+		return 1; //error detected
+	}
+	float roll, pitch, yaw, throttle;
+    
+	memcpy(&roll, &buf[2], sizeof(float)); //in ned coordinate system
+	memcpy(&pitch, &buf[6], sizeof(float));
+	memcpy(&yaw, &buf[10], sizeof(float));
+
+	/* swap the order of quaternion to make the frame consistent with ahrs' rotation order */
+	memcpy(&throttle, &buf[14], sizeof(float));
+	memcpy(&rc_ch7, &buf[18], sizeof(int));
+	//memcpy(&imu.gyrop[0], &buf[22], sizeof(float));
+
+	rc_value[0] = roll; //east
+	rc_value[1]= pitch; //north
+	rc_value[2] = 0; //up //do not change yaw angle
+	rc_value[3] = throttle;
+	rc_ecbf_mode = rc_ch7;
+
+	return 0;
+}
+
+void imu_buf_push(uint8_t c){
+	if(imu.buf_pos >= IMU_SERIAL_MSG_SIZE) {
+		/* drop the oldest data and shift the rest to left */
+		int i;
+		for(i = 1; i < IMU_SERIAL_MSG_SIZE; i++) {
+			imu.buf[i - 1] = imu.buf[i];
+		}
+
+		/* save new byte to the last array element */
+		imu.buf[IMU_SERIAL_MSG_SIZE - 1] = c;
+		imu.buf_pos = IMU_SERIAL_MSG_SIZE;
+	} else {
+		/* append new byte if the array boundary is not yet reached */
+		imu.buf[imu.buf_pos] = c;
+		imu.buf_pos++;
+	}
+}
+int uart_thread_entry(){
+	ros::NodeHandle n;
+    ros::Rate loop_rate(100);
+	char c;
+	imu.buf_pos = 0;
+
+	cout<<"start\n";
+	while(ros::ok()){
+		g_mutex.lock();
+		if(serial_getc(&c) != -1) {
+			imu_buf_push(c); 
+			if(imu.buf[0]=='@' && imu.buf[IMU_SERIAL_MSG_SIZE-1] == '+'){
+				if(imu_decode(imu.buf)==0){
+					cout<<"rc info in uart:"<<endl;
+					cout<<"rc.mode: "<<rc_ecbf_mode<<"\n";
+					cout<<"rc.roll: "<<rc_value[0]<<"\n";
+					cout<<"rc.pitch: "<<rc_value[1]<<"\n";
+					cout<<"rc.yaw: "<<rc_value[2]<<"\n";
+					cout<<"rc.throttle: "<<rc_value[3]<<"\n";
+					cout<<"==="<<endl;
+					//rate.sleep();			
+				}
+			}
+		}
+		g_mutex.unlock();
+	}
+	return 0;
+
 }
 
 

@@ -2,8 +2,7 @@
 #include<thread>
 #include"ros/ros.h"
 #include<serial.hpp>
-#include"thread/lidar.h"
-#include"thread/uart.h"
+#include"thread/main_thread.h"
 
 using namespace std;
 
