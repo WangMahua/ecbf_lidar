@@ -338,13 +338,22 @@ int lidar_thread_entry(){
 		clustering_time = (now_time - begin_time).toSec();
 		cout << "hz:"<< 1/clustering_time <<endl; //hz test
 		
-		/* send data to uart */
-		if(DEBUG_FLAG == 0){
-			send_pose_to_serial(pub_to_controller[0],pub_to_controller[1],rc.throttle,0.0,0.0,0.0,0.0,0.0,0.0,0.0);
-		}else{
-			send_pose_to_serial(rc.roll,rc.pitch,rc.throttle,0.0,0.0,0.0,0.0,0.0,0.0,0.0);
-		}
 		loop2_rate.sleep();
 	}
 	return 0;
+}
+
+int send_thread_entry(){
+
+	ros::Rate loop3_rate(100);
+
+	while(ros::ok()){
+		/* send data to uart */
+		if(DEBUG_FLAG == 0){
+			send_pose_to_serial(pub_to_controller[0],pub_to_controller[1],rc_value[3],0.0,0.0,0.0,0.0,0.0,0.0,0.0);
+		}else{
+			send_pose_to_serial(rc_value[0],rc_value[1],rc_value[3],0.0,0.0,0.0,0.0,0.0,0.0,0.0);
+		}
+		loop3_rate.sleep();
+	}
 }
