@@ -264,8 +264,9 @@ void imu_buf_push(uint8_t c){
 	}
 }
 int uart_thread_entry(){
-	ros::NodeHandle n;
-    	ros::Rate loop_rate(400);
+	ros::NodeHandle k;
+	
+    ros::Rate loop_rate(400);
 	char c;
 	imu.buf_pos = 0;
 
@@ -344,7 +345,7 @@ int lidar_thread_entry(){
 }
 
 int send_thread_entry(){
-
+	ros::NodeHandle h;
 	ros::Rate loop3_rate(100);
 
 	while(ros::ok()){

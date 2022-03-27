@@ -9,6 +9,7 @@ using namespace std;
 main(int argc ,char **argv){
 
 	ros::init(argc,argv,"ecbf_uart");
+	ros::Time::init();
 	
 	cout << "main start" << endl;           
 	serial_init((char *)"/dev/ttyUSB0", 115200);
