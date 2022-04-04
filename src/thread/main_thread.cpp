@@ -4,6 +4,7 @@
 #include <mutex>
 #include <cmath>
 
+#include "std_msgs/Float32.h"
 #include "ecbf_lidar/qp.h"
 #include "ecbf_lidar/acc_compare.h"
 #include "ecbf_lidar/rc_compare.h"
@@ -40,7 +41,7 @@ private:
 	bool ecbf_mode = false;
 
 	ros::NodeHandle n;
-	ros::Publisher debug_rc_pub,debug_qp_pub;
+	ros::Publisher debug_rc_pub,debug_qp_pub,debug_hz_pub;
 	ros::ServiceClient client;
 
 public:
@@ -49,6 +50,7 @@ public:
 	void get_desire_rc_input(rc_data);
 	float bound_rc(float);
 	void debug_pub();
+	void debug_hz(float);
 	void acc_cal();
 	void rc_cal(float*);
 	void get_sol(double*);
@@ -60,6 +62,7 @@ ecbf::ecbf(){
 	client = n.serviceClient<ecbf_lidar::qp>("qp");
 	debug_rc_pub = n.advertise<ecbf_lidar::rc_compare>("rc_info", 1); 
 	debug_qp_pub = n.advertise<ecbf_lidar::acc_compare>("qp_info", 1); 
+	debug_hz_pub = n.advertise<std_msgs::Float32>("hz_info", 100); 
 }
 void ecbf::get_desire_rc_input(float rc_roll,float rc_pitch,\
 	float rc_yaw,float rc_throttle,int rc_mode){
@@ -108,6 +111,12 @@ void ecbf::debug_pub(){
 	debug_qp.ecbf_acc_z = ecbf_acc[2];
 	
 	debug_qp_pub.publish(debug_qp);
+}
+
+void ecbf::debug_hz(float a){
+	std_msgs::Float32 debug_hz;
+	debug_hz.data = a;
+	debug_hz_pub.publish(debug_hz);
 }
 
 float ecbf::bound_rc(float v){
@@ -337,6 +346,7 @@ int lidar_thread_entry(){
 		ros::Time now_time = ros::Time::now();
 		float clustering_time = 0.0 ;
 		clustering_time = (now_time - begin_time).toSec();
+		ecbf_process.debug_hz(clustering_time); // hz record 
 		cout << "hz:"<< 1/clustering_time <<endl; //hz test
 		
 		loop2_rate.sleep();
