@@ -8,6 +8,7 @@ from sensor_msgs.msg import LaserScan
 import laser_geometry.laser_geometry as lg
 
 from cvxopt import matrix, solvers
+from quadprog import solve_qp
 import time
 from rospy.rostime import Time
 from geometry_msgs.msg import PoseStamped
@@ -92,6 +93,7 @@ class ConstraintGenerator:
 		solvers.options['feastol']=1e-4
 		solvers.options['maxiters']=80
 		sol=solvers.coneqp(self.P, self.Q, self.G, self.H)
+        xf, f, xu, iters, lagr, iact = solve_qp(self.P, self.Q, self.G, self.H) # quadprog
 		u_star = sol['x']
 		#print(sol['s'])
 		return np.array([u_star[0], u_star[1], u[2]]) # do not constraint z domain 
