@@ -93,9 +93,13 @@ class ConstraintGenerator:
 		solvers.options['feastol']=1e-4
 		solvers.options['maxiters']=80
 		sol=solvers.coneqp(self.P, self.Q, self.G, self.H)
-        xf, f, xu, iters, lagr, iact = solve_qp(self.P, self.Q, self.G, self.H) # quadprog
+		xf, f, xu, iters, lagr, iact = solve_qp(self.P, self.Q, self.G, self.H) # quadprog
 		u_star = sol['x']
-		#print(sol['s'])
+		print("---")
+		print("quadprog:")
+		print(xf)
+		print("cvxopt:")
+		print(sol['x'])
 		return np.array([u_star[0], u_star[1], u[2]]) # do not constraint z domain 
 
     def pos_cb(self, data):

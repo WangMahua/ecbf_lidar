@@ -346,7 +346,7 @@ int lidar_thread_entry(){
 		ros::Time now_time = ros::Time::now();
 		float clustering_time = 0.0 ;
 		clustering_time = (now_time - begin_time).toSec();
-		ecbf_process.debug_hz(clustering_time); // hz record 
+		ecbf_process.debug_hz(1/clustering_time); // hz record 
 		cout << "hz:"<< 1/clustering_time <<endl; //hz test
 		
 		loop2_rate.sleep();
