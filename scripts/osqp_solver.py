@@ -16,6 +16,7 @@ from ecbf_lidar.srv import *
 DEL_V = 0.3
 upper_v = 4
 lower_v = -4
+EQU_NUM = 10
 
 class ConstraintGenerator:
     def __init__(self):
@@ -25,7 +26,7 @@ class ConstraintGenerator:
         self.qp_server = rospy.Service('qp', qp, self.qp_handler)
         self.rate = rospy.Rate(100)
         self.pcl = None
-	self.pcl_flag = False
+		self.pcl_flag = False
         self.lp = lg.LaserProjection()
         self.safe_dis = 1.0
 
@@ -50,51 +51,61 @@ class ConstraintGenerator:
         self.now_time = 0.0
 
         self._initialize()
-
+	
     def scan_cb(self, data):
         pc2_data = self.lp.projectLaser(data)
         xyz = ros_numpy.point_cloud2.pointcloud2_to_xyz_array(pc2_data)
         #print(np.linalg.norm(xyz,axis=1,keepdims=True))
         self.pcl = xyz
-	self.pcl_flag = True
+		self.pcl_flag = True
+
+	def reduce_pcl(self,before_pcl): # reduce pcl to appointed equation number 
+		after_pcl = np.zeros((10, 3))
+		pcl_number = before_pcl.shape[0]
+		increment = int(pcl_number/EQU_NUM)
+		for i in range(EQU_NUM):
+			if i != EQU_NUM-1:
+				idx = np.argmin(np.linalg.norm(before_pcl[i*increment:(i+1)*increment],axis=1,keepdims=True))
+			else :
+				idx = np.argmin(np.linalg.norm(before_pcl[i*increment:],axis=1,keepdims=True))
+			after_pcl[i]=before_pcl[idx]
+		return after_pcl
 
     def contraint_solver(self, u):
-	if self.pcl_flag != True :
-		print("do not get lidar data")
-		return np.array([u[0], u[1], u[2]])
-	else:
-		pcl = o3d.geometry.PointCloud()
-		pcl.points = o3d.utility.Vector3dVector(self.pcl)
-		
-		downpcl = pcl.voxel_down_sample(voxel_size=2)
-		pcl = np.asarray(downpcl.points)
+		if self.pcl_flag != True :
+			print("do not get lidar data")
+			return np.array([u[0], u[1], u[2]])
+		else:
+			pcl = o3d.geometry.PointCloud()
+			pcl.points = o3d.utility.Vector3dVector(self.pcl)
+			
+			downpcl = pcl.voxel_down_sample(voxel_size=2)
+			pcl = np.asarray(downpcl.points)
+			pcl = reduce_pcl(pcl)
+			pcl = pcl[np.abs(pcl[:, 0]) < 1.0]
+			pcl = pcl[np.abs(pcl[:, 1]) < 1.0]
+			pcl = -pcl
+			#print(pcl)
+			dis_sum_square=np.square(pcl).sum(axis=1)
+			vel_sum_square=np.square(self.vel).sum(axis=0)
 
-		print(pcl.shape)
-		pcl = pcl[np.abs(pcl[:, 0]) < 1.0]
-		pcl = pcl[np.abs(pcl[:, 1]) < 1.0]
-		pcl = pcl[np.abs(pcl[:, 2]) < 0.5]
-		pcl = -pcl
-		#print(pcl)
-		dis_sum_square=np.square(pcl).sum(axis=1)
-		vel_sum_square=np.square(self.vel).sum(axis=0)
+			g = -2*pcl
+			h = 2*vel_sum_square*np.ones(len(pcl)) +\
+				self.k1*(dis_sum_square-(self.safe_dis*self.safe_dis)*np.ones(len(pcl)))+\
+				self.k2*2*(pcl.dot(self.vel))
 
-		g = -2*pcl
-		h = 2*vel_sum_square*np.ones(len(pcl)) +\
-		    self.k1*(dis_sum_square-(self.safe_dis*self.safe_dis)*np.ones(len(pcl)))+\
-		    self.k2*2*(pcl.dot(self.vel))
+			#print(g.shape)
+			#print(h.shape)
 
-		#print(g.shape)
-		#print(h.shape)
-
-		self.Q = matrix(-0.5*u[0:3],tc='d')
-		self.G = matrix(g,tc='d')
-		self.H = matrix(h,tc='d')
-		solvers.options['feastol']=1e-4
-		solvers.options['maxiters']=80
-		sol=solvers.coneqp(self.P, self.Q, self.G, self.H)
-		u_star = sol['x']
-		#print(sol['s'])
-		return np.array([u_star[0], u_star[1], u[2]]) # do not constraint z domain 
+			self.Q = matrix(-0.5*u[0:3],tc='d')
+			self.G = matrix(g,tc='d')
+			self.H = matrix(h,tc='d')
+			solvers.options['feastol']=1e-4
+			solvers.options['maxiters']=80
+			sol=solvers.coneqp(self.P, self.Q, self.G, self.H)
+			u_star = sol['x']
+			#print(sol['s'])
+			return np.array([u_star[0], u_star[1], u[2]]) # do not constraint z domain 
 
     def pos_cb(self, data):
         if self.pose_init_flag == False:
