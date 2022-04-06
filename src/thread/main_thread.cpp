@@ -4,7 +4,11 @@
 #include <mutex>
 #include <cmath>
 
+#include "tf/transform_listener.h"
 #include "std_msgs/Float32.h"
+#include "sensor_msgs/LaserScan.h"
+#include "sensor_msgs/PointCloud.h"
+#include "laser_geometry/laser_geometry.h"
 #include "ecbf_lidar/qp.h"
 #include "ecbf_lidar/acc_compare.h"
 #include "ecbf_lidar/rc_compare.h"
@@ -42,7 +46,11 @@ private:
 
 	ros::NodeHandle n;
 	ros::Publisher debug_rc_pub,debug_qp_pub,debug_hz_pub;
+	ros::Subscriber lidar_sub;
 	ros::ServiceClient client;
+
+	laser_geometry::LaserProjection projector;
+	tf::TransformListener listener;
 
 public:
 	ecbf();
@@ -55,6 +63,7 @@ public:
 	void rc_cal(float*);
 	void get_sol(double*);
 	void process();
+	void scan_callback(const sensor_msgs::LaserScan::ConstPtr&);
 
 };
 ecbf::ecbf(){
@@ -63,7 +72,15 @@ ecbf::ecbf(){
 	debug_rc_pub = n.advertise<ecbf_lidar::rc_compare>("rc_info", 1); 
 	debug_qp_pub = n.advertise<ecbf_lidar::acc_compare>("qp_info", 1); 
 	debug_hz_pub = n.advertise<std_msgs::Float32>("hz_info", 100); 
+	lidar_sub = n.subscribe<sensor_msgs::LaserScan>("scan", 1, &ecbf::scan_callback, this); 
 }
+
+void ecbf::scan_callback(const sensor_msgs::LaserScan::ConstPtr& msg){
+
+  sensor_msgs::PointCloud cloud;
+  projector.transformLaserScanToPointCloud("base_link",*msg, cloud,listener);
+}
+
 void ecbf::get_desire_rc_input(float rc_roll,float rc_pitch,\
 	float rc_yaw,float rc_throttle,int rc_mode){
 	user_rc_input[0] = rc_roll;
