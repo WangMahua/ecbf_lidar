@@ -13,6 +13,8 @@
 #include "sensor_msgs/LaserScan.h"
 #include "sensor_msgs/PointCloud.h"
 #include "laser_geometry/laser_geometry.h"
+#include <geometry_msgs/PoseStamped.h>
+
 #include "ecbf_lidar/qp.h"
 #include "ecbf_lidar/acc_compare.h"
 #include "ecbf_lidar/rc_compare.h"
@@ -28,6 +30,10 @@
 #define DEBUG_FLAG 0
 
 #define EQU_NUM 10
+
+#define UPPER_V 4
+#define LOWER_V -4
+#define DEL_V 0.3
 
 using namespace std;
 
@@ -49,10 +55,18 @@ private:
 	float ecbf_acc[3] = {0.0,0.0,0.0}; // new safe 
 	float ecbf_rc[3] = {0.0,0.0,0.0}; //roll pitch throttle
 	bool ecbf_mode = false;
+	
+	/*calculate velocity*/
+	double pos[3] = {0,0,0};
+	double vel[3] = {0,0,0};
+	double last_vel[3] = {0,0,0};
+	double last_pos[3] = {0,0,0};
+	double last_time = 0.0;
+	bool pose_init_flag = false;
 
 	ros::NodeHandle n;
 	ros::Publisher debug_rc_pub,debug_qp_pub,debug_hz_pub;
-	ros::Subscriber lidar_sub;
+	ros::Subscriber lidar_sub, pos_sub;
 	ros::ServiceClient client;
 
 	laser_geometry::LaserProjection projector;
@@ -73,8 +87,12 @@ public:
 	void get_sol(double*);
 	void process();
 	void reduce_pcl();
-	void scan_callback(const sensor_msgs::LaserScan::ConstPtr&);
+	float bound(float);
+	void fix_vel();
+	float fix_vel(float ,float );
 
+	void scan_callback(const sensor_msgs::LaserScan::ConstPtr&);
+	void pos_callback(const geometry_msgs::PoseStamped::ConstPtr&);
 };
 
 ecbf::ecbf(){
@@ -84,7 +102,68 @@ ecbf::ecbf(){
 	debug_qp_pub = n.advertise<ecbf_lidar::acc_compare>("qp_info", 1); 
 	debug_hz_pub = n.advertise<std_msgs::Float32>("hz_info", 100); 
 	lidar_sub = n.subscribe<sensor_msgs::LaserScan>("scan", 1, &ecbf::scan_callback, this); 
+	pos_sub = n.subscribe("/vrpn_client_node/MAV1/pose", 1, &ecbf::pos_callback, this); 
 }
+
+float ecbf::bound(float v){
+	if(v>UPPER_V){
+		v = UPPER_V;
+	}else if(v<LOWER_V){
+		v = LOWER_V;
+	}
+	return v;
+}
+
+void ecbf::fix_vel(){
+	for(int i=0;i<3;i++){
+		vel[i]=fix_vel(vel[i],last_vel[i]);
+	}
+}
+
+float ecbf::fix_vel(float now_vel,float old_vel){
+	float new_vel = old_vel;
+	float delta_vel = 0.0;
+	delta_vel = now_vel-old_vel;
+	if(abs(delta_vel)>DEL_V){
+		if(delta_vel>0){
+			new_vel +=DEL_V;
+		}else{
+			new_vel -=DEL_V;
+		}
+	}else{
+		new_vel = now_vel;
+	}
+	new_vel = bound(new_vel);
+	return new_vel;
+	
+}
+
+void ecbf::pos_callback(const geometry_msgs::PoseStamped::ConstPtr& msg){
+		double now_time;
+		if (pose_init_flag == false){
+			now_time = ros::Time::now().toSec();
+			pos[0] = msg->pose.position.x;
+			pos[1] = msg->pose.position.y;
+			pos[2] = msg->pose.position.z;
+			*last_pos = *pos;
+			last_time = now_time;
+			pose_init_flag = true;	
+		}
+		else{
+			now_time = ros::Time::now().toSec();
+			pos[0] = msg->pose.position.x;
+			pos[1] = msg->pose.position.y;
+			pos[2] = msg->pose.position.z;
+			vel[0] =(pos[0] - last_pos[0])/0.0083;
+			vel[1] =(pos[1] - last_pos[1])/0.0083;
+			vel[2] =(pos[2] - last_pos[2])/0.0083;
+			fix_vel();
+			*last_vel = *vel;
+			*last_pos = *pos;
+			last_time = now_time;
+		}
+}
+
 void ecbf::reduce_pcl(){
 	outputCloud.clear();
 	int num = int(inputCloud.points.size()/EQU_NUM);
@@ -116,9 +195,9 @@ void ecbf::scan_callback(const sensor_msgs::LaserScan::ConstPtr& msg){
 
     projector.projectLaser(*msg, input_pointcloud); // laserscan to pcl2
     pcl::fromROSMsg(input_pointcloud, inputCloud);
-	std::cout <<"size : " <<inputCloud.points.size()<<std::endl;
+	std::cout <<"input cloud size : " <<inputCloud.points.size()<<std::endl;
 	reduce_pcl();
-	std::cout <<"size : " <<outputCloud.points.size()<<std::endl;
+	std::cout <<"output cloud size : " <<outputCloud.points.size()<<std::endl;
 }
 
 void ecbf::get_desire_rc_input(float rc_roll,float rc_pitch,\
