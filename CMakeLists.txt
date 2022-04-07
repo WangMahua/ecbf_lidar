@@ -23,7 +23,13 @@ find_package(catkin REQUIRED COMPONENTS
   laser_geometry
   pcl_conversions
   pcl_ros
+  sensor_msgs
 )
+
+find_package(PCL REQUIRED)
+include_directories(${PCL_INCLUDE_DIRS})
+link_directories(${PCL_LIBRARY_DIRS})
+add_definitions(${PCL_DEFINITIONS})
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
@@ -240,3 +246,13 @@ target_link_libraries(ecbf_controller PUBLIC
 )
 
 add_dependencies(ecbf_controller ${catkin_EXPORTED_TARGETS})
+
+# debug lidar
+add_executable(lidar_test
+  src/laser_test.cpp
+)
+
+target_link_libraries(lidar_test PUBLIC
+  ${catkin_LIBRARIES}
+)
+

@@ -1,6 +1,6 @@
 <launch>
 
-    <node pkg="ecbf_lidar" type="osqp_solver.py" name="osqp_solver" output="screen" />
+    <node pkg="ecbf_lidar" type="lidar_test" name="lidar_test" output="screen" />
 	<node pkg="urg_node" type="urg_node" name="urg_node" output="screen" >
 		<param name="ip_address" value="192.168.0.10"/>	
 	</node>

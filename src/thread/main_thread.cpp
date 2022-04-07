@@ -3,6 +3,10 @@
 #include <serial.hpp>
 #include <mutex>
 #include <cmath>
+#include <pcl/point_types.h>
+#include <pcl/filters/passthrough.h>
+#include <pcl/point_cloud.h>
+#include "pcl_ros/point_cloud.h"
 
 #include "tf/transform_listener.h"
 #include "std_msgs/Float32.h"
@@ -22,6 +26,8 @@
 /* the value calculate from ecbf and do not want to apply it to f-*/
 /* light control board, you should set this flag as 1.            */
 #define DEBUG_FLAG 0
+
+#define EQU_NUM 10
 
 using namespace std;
 
@@ -52,6 +58,9 @@ private:
 	laser_geometry::LaserProjection projector;
 	tf::TransformListener listener;
 
+	pcl::PointCloud<pcl::PointXYZ> inputCloud;
+	pcl::PointCloud<pcl::PointXYZ> outputCloud;
+
 public:
 	ecbf();
 	void get_desire_rc_input(float,float,float,float,int);
@@ -63,9 +72,11 @@ public:
 	void rc_cal(float*);
 	void get_sol(double*);
 	void process();
+	void reduce_pcl();
 	void scan_callback(const sensor_msgs::LaserScan::ConstPtr&);
 
 };
+
 ecbf::ecbf(){
 	//ros 
 	client = n.serviceClient<ecbf_lidar::qp>("qp");
@@ -74,11 +85,40 @@ ecbf::ecbf(){
 	debug_hz_pub = n.advertise<std_msgs::Float32>("hz_info", 100); 
 	lidar_sub = n.subscribe<sensor_msgs::LaserScan>("scan", 1, &ecbf::scan_callback, this); 
 }
+void ecbf::reduce_pcl(){
+	outputCloud.clear();
+	int num = int(inputCloud.points.size()/EQU_NUM);
+	for(int i =0;i<EQU_NUM;i++){
+		std::vector<float> vect(num,1000.0);
+		if(i!=EQU_NUM-1){
+			for(int j = i*num ;j<(i+1)*num;j++){
+				float ms = pow(inputCloud.points[j].x,2)+pow(inputCloud.points[j].y,2);
+				vect.push_back(ms);
+			}
+		}else{
+			for(int j = i*num ;j<inputCloud.points.size();j++){
+				float ms = pow(inputCloud.points[j].x,2)+pow(inputCloud.points[j].y,2);
+				vect.push_back(ms);
+			}
+		}
+
+		auto it = std::min_element(std::begin(vect), std::end(vect));
+		/*
+		std::cout << "index of smallest element: " << *it<< std::endl;
+		std::cout << "value: " << vect[std::distance(std::begin(vect), it)] << std::endl;
+		*/
+		outputCloud.push_back(inputCloud[vect[std::distance(std::begin(vect), it)]]);
+	}
+}
 
 void ecbf::scan_callback(const sensor_msgs::LaserScan::ConstPtr& msg){
+	sensor_msgs::PointCloud2 input_pointcloud;
 
-  sensor_msgs::PointCloud cloud;
-  projector.transformLaserScanToPointCloud("base_link",*msg, cloud,listener);
+    projector.projectLaser(*msg, input_pointcloud); // laserscan to pcl2
+    pcl::fromROSMsg(input_pointcloud, inputCloud);
+	std::cout <<"size : " <<inputCloud.points.size()<<std::endl;
+	reduce_pcl();
+	std::cout <<"size : " <<outputCloud.points.size()<<std::endl;
 }
 
 void ecbf::get_desire_rc_input(float rc_roll,float rc_pitch,\
@@ -342,7 +382,7 @@ int lidar_thread_entry(){
 						.mode = rc_ecbf_mode };
 		last_ecbf_mode = rc_ecbf_mode;
 		
-
+		/*
 		cout<<"rc info in lidar:"<<endl;
 		cout<<"rc.mode: "<<rc.mode<<"\n";
 		cout<<"rc.roll: "<<rc.roll<<"\n";
@@ -350,7 +390,7 @@ int lidar_thread_entry(){
 		cout<<"rc.yaw: "<<rc.yaw<<"\n";
 		cout<<"rc.throttle: "<<rc.throttle<<"\n";
 		cout<<"==="<<endl;
-		
+		*/
 		ros::Time begin_time = ros::Time::now();
 
 		ecbf_process.get_desire_rc_input(rc);
@@ -367,6 +407,7 @@ int lidar_thread_entry(){
 		cout << "hz:"<< 1/clustering_time <<endl; //hz test
 		
 		loop2_rate.sleep();
+		ros::spinOnce();
 	}
 	return 0;
 }
