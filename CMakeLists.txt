@@ -267,4 +267,10 @@ add_executable(lidar_test
 target_link_libraries(lidar_test PUBLIC
   ${catkin_LIBRARIES}
 )
+add_executable(odometry
+  src/odometry.cpp
+)
+target_link_libraries(odometry PUBLIC
+  ${catkin_LIBRARIES}
+)
 

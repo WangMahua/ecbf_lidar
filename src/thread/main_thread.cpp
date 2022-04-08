@@ -39,7 +39,7 @@
 /* light control board, you should set this flag as 1.            */
 #define DEBUG_FLAG 0
 
-#define EQU_NUM 10
+#define EQU_NUM 100
 
 #define UPPER_V 4
 #define LOWER_V -4
@@ -77,9 +77,12 @@ private:
 	bool pose_init_flag = false;
 
 	ros::NodeHandle n;
-	ros::Publisher debug_rc_pub,debug_qp_pub,debug_hz_pub;
+	ros::Publisher debug_rc_pub,debug_qp_pub,debug_hz_pub,debug_vel_pub;
 	ros::Subscriber lidar_sub, pos_sub;
 	ros::ServiceClient client;
+
+	ros::Time now_vel_time ;
+	ros::Time last_vel_time ;
 
 	laser_geometry::LaserProjection projector;
 	tf::TransformListener listener;
@@ -115,6 +118,7 @@ ecbf::ecbf(){
 	debug_rc_pub = n.advertise<ecbf_lidar::rc_compare>("rc_info", 1); 
 	debug_qp_pub = n.advertise<ecbf_lidar::acc_compare>("qp_info", 1); 
 	debug_hz_pub = n.advertise<std_msgs::Float32>("hz_info", 100); 
+	debug_vel_pub = n.advertise<geometry_msgs::Vector3>("vel_info", 1); 
 	lidar_sub = n.subscribe<sensor_msgs::LaserScan>("scan", 1, &ecbf::scan_callback, this); 
 	pos_sub = n.subscribe("/vrpn_client_node/MAV1/pose", 1, &ecbf::pos_callback, this); 
 }
@@ -124,7 +128,7 @@ ecbf::ecbf(){
 void ecbf::qp_solve(){
 	double *p_ = pos;
 	double *v_ = vel;
-	float u[3] = {0.0,0.0,0.0}; // user input 
+	float u[3] = {user_acc[0],user_acc[1],user_acc[2]}; // user input 
 
 	/*get value from outputcloud*/
 	// std::vector<geometry_msgs::Vector3> data;
@@ -141,8 +145,12 @@ void ecbf::qp_solve(){
 		temp.push_back((-1)*outputCloud.points[i].x);
 		temp.push_back((-1)*outputCloud.points[i].y);
 		temp.push_back((-1)*outputCloud.points[i].z);
+		cout <<"insert_data: x:" << temp[0] << " y: "<<temp[1] <<" z:"<<temp[2]<< endl;
+		
 		data.push_back(temp);
 	}
+	cout << "size of data:" <<data.size() <<endl;
+	cout << "size of data:" <<data[0].size() <<endl;
 	/*change value into string*/
 	quadprogpp::Matrix<double> G, CE, CI;
 	quadprogpp::Vector<double> g0, ce0, ci0, x;
@@ -161,18 +169,9 @@ void ecbf::qp_solve(){
 		g0[i] = - 0.5*u[i];
 	}
 
-	m = 1;
+	m = 0;
 	CE.resize(n, m);
-	for (int i = 0; i < n; i++){
-		for (int j = 0; j < m; j++){
-			if(i==j) CE[i][j] = 0;
-			else CE[i][j] = 0;
-		}
-	}
 	ce0.resize(m);
-	for (int i = 0; i < n ; i++){
-		ce0[i] = 0;
-	}
 
 	p = EQU_NUM;
 	std::vector<float> square_sum;
@@ -181,7 +180,7 @@ void ecbf::qp_solve(){
 	for (int i = 0; i < p; i++){
 		float sum = 0.0;
 		for (int j = 0; j < n; j++){
-			CI[i][j]= 2*data[i][j];
+			CI[j][i]= 2*data[i][j];
 			sum+=pow(data[i][j],2);
 		}
 		sum -= 2*pow(SAFE_DIS,2);
@@ -194,6 +193,12 @@ void ecbf::qp_solve(){
 	x.resize(n);
 	std::cout << "f: " << solve_quadprog(G, g0, CE, ce0, CI, ci0, x) << std::endl;
 	std::cout << "x: " << x << std::endl;
+
+
+	ecbf_acc[0] = x[0] ;
+	ecbf_acc[1] = x[1] ;
+	//ecbf_acc[2] = srv.response.ecbf_output[2] ;
+	ecbf_acc[2] = user_rc_input[3]; //do not change throttle
 }
 
 float ecbf::bound(float v){
@@ -230,28 +235,32 @@ float ecbf::fix_vel(float now_vel,float old_vel){
 }
 
 void ecbf::pos_callback(const geometry_msgs::PoseStamped::ConstPtr& msg){
-		double now_time;
 		if (pose_init_flag == false){
-			now_time = ros::Time::now().toSec();
+			now_vel_time =ros::Time::now();
 			pos[0] = msg->pose.position.x;
 			pos[1] = msg->pose.position.y;
 			pos[2] = msg->pose.position.z;
 			*last_pos = *pos;
-			last_time = now_time;
+			last_vel_time = now_vel_time;
 			pose_init_flag = true;	
 		}
 		else{
-			now_time = ros::Time::now().toSec();
+			now_vel_time =ros::Time::now();
+			float clustering_time = (now_vel_time - last_vel_time).toSec();
+
 			pos[0] = msg->pose.position.x;
 			pos[1] = msg->pose.position.y;
 			pos[2] = msg->pose.position.z;
-			vel[0] =(pos[0] - last_pos[0])/0.0083;
-			vel[1] =(pos[1] - last_pos[1])/0.0083;
-			vel[2] =(pos[2] - last_pos[2])/0.0083;
+			vel[0] =(pos[0] - last_pos[0])/clustering_time;
+			vel[1] =(pos[1] - last_pos[1])/clustering_time;
+			vel[2] =(pos[2] - last_pos[2])/clustering_time;
 			fix_vel();
-			*last_vel = *vel;
-			*last_pos = *pos;
-			last_time = now_time;
+			for(int i =0;i<3;i++){
+				last_pos[i]=pos[i];
+				last_vel[i]=vel[i];
+				cout << vel[i] << endl;
+			}
+			last_vel_time = now_vel_time;
 		}
 }
 
@@ -259,25 +268,32 @@ void ecbf::reduce_pcl(){
 	outputCloud.clear();
 	int num = int(inputCloud.points.size()/EQU_NUM);
 	for(int i =0;i<EQU_NUM;i++){
-		std::vector<float> vect(num,1000.0);
+		int min_idx = 0;
+		float min_ms = 1000.0;
 		if(i!=EQU_NUM-1){
 			for(int j = i*num ;j<(i+1)*num;j++){
 				float ms = pow(inputCloud.points[j].x,2)+pow(inputCloud.points[j].y,2);
-				vect.push_back(ms);
+				if(ms<min_ms){
+					min_idx=j;
+					min_ms = ms;
+				}
 			}
 		}else{
 			for(int j = i*num ;j<inputCloud.points.size();j++){
 				float ms = pow(inputCloud.points[j].x,2)+pow(inputCloud.points[j].y,2);
-				vect.push_back(ms);
+				if(ms<min_ms){
+					min_idx=j;
+					min_ms = ms;
+				}
 			}
 		}
-
-		auto it = std::min_element(std::begin(vect), std::end(vect));
-		/*
-		std::cout << "index of smallest element: " << *it<< std::endl;
-		std::cout << "value: " << vect[std::distance(std::begin(vect), it)] << std::endl;
-		*/
-		outputCloud.push_back(inputCloud[vect[std::distance(std::begin(vect), it)]]);
+		cout << "---"<< endl;
+		cout << "ms: "<< min_ms << endl;
+		cout << "j: "<< min_idx << endl;
+		cout << "x: " << inputCloud.points[min_idx].x  << endl;
+		cout << "y: " << inputCloud.points[min_idx].y  << endl;
+		cout << "z: " << inputCloud.points[min_idx].z  << endl;
+		outputCloud.push_back(inputCloud.points[min_idx]);
 	}
 }
 
@@ -320,6 +336,7 @@ void ecbf::debug_pub(){
 	/* debug */
 	ecbf_lidar::rc_compare debug_rc;
 	ecbf_lidar::acc_compare debug_qp;
+	geometry_msgs::Vector3 debug_vel;
 	
 	debug_rc.origin_roll = user_rc_input[0];
 	debug_rc.origin_pitch = user_rc_input[1];
@@ -338,6 +355,13 @@ void ecbf::debug_pub(){
 	debug_qp.ecbf_acc_z = ecbf_acc[2];
 	
 	debug_qp_pub.publish(debug_qp);
+
+	debug_vel.x = vel[0];
+	debug_vel.y = vel[1];
+	debug_vel.z = vel[2];
+
+	debug_vel_pub.publish(debug_vel);
+
 }
 
 void ecbf::debug_hz(float a){
@@ -360,6 +384,7 @@ void ecbf::process(){
 	if(ecbf_mode==true){
 		/*change rc to qp*/
 		acc_cal();
+/*
 		ecbf_lidar::qp srv;
 		for(int i =0;i<3;i++){
 			srv.request.desire_input.push_back(user_acc[i]);
@@ -382,6 +407,9 @@ void ecbf::process(){
 			ecbf_rc[1] = user_rc_input[1] ; //pitch
 			ecbf_rc[2] = user_rc_input[3] ; //throttle
 		}
+*/
+		qp_solve();
+		rc_cal(ecbf_rc);
 
 	}else{
 		cout<< "ecbf not trigger!\n";
