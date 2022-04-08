@@ -1,8 +1,17 @@
 #include "ros/ros.h"
 #include <iostream>
+#include <sstream>
 #include <serial.hpp>
 #include <mutex>
 #include <cmath>
+#include <vector>
+#include <string>
+#include <iterator>
+
+#include "osqp.h"
+#include "QuadProg++/Array.hh"
+#include "QuadProg++/QuadProg++.hh"
+
 #include <pcl/point_types.h>
 #include <pcl/filters/passthrough.h>
 #include <pcl/point_cloud.h>
@@ -14,6 +23,7 @@
 #include "sensor_msgs/PointCloud.h"
 #include "laser_geometry/laser_geometry.h"
 #include <geometry_msgs/PoseStamped.h>
+#include <geometry_msgs/Vector3.h>
 
 #include "ecbf_lidar/qp.h"
 #include "ecbf_lidar/acc_compare.h"
@@ -34,6 +44,8 @@
 #define UPPER_V 4
 #define LOWER_V -4
 #define DEL_V 0.3
+
+#define SAFE_DIS 1
 
 using namespace std;
 
@@ -91,6 +103,8 @@ public:
 	void fix_vel();
 	float fix_vel(float ,float );
 
+	void qp_solve();
+
 	void scan_callback(const sensor_msgs::LaserScan::ConstPtr&);
 	void pos_callback(const geometry_msgs::PoseStamped::ConstPtr&);
 };
@@ -103,6 +117,83 @@ ecbf::ecbf(){
 	debug_hz_pub = n.advertise<std_msgs::Float32>("hz_info", 100); 
 	lidar_sub = n.subscribe<sensor_msgs::LaserScan>("scan", 1, &ecbf::scan_callback, this); 
 	pos_sub = n.subscribe("/vrpn_client_node/MAV1/pose", 1, &ecbf::pos_callback, this); 
+}
+
+
+
+void ecbf::qp_solve(){
+	double *p_ = pos;
+	double *v_ = vel;
+	float u[3] = {0.0,0.0,0.0}; // user input 
+
+	/*get value from outputcloud*/
+	// std::vector<geometry_msgs::Vector3> data;
+	// for(int i =0;i<outputCloud.points.size();i++){
+	// 	geometry_msgs::Vector3 temp;
+	// 	temp.x = outputCloud.points[i].x;
+	// 	temp.y = outputCloud.points[i].y;
+	// 	temp.z = outputCloud.points[i].z;
+	// 	data.push_back(temp);
+	// }
+	std::vector<std::vector<float>> data;
+	for(int i =0;i<outputCloud.points.size();i++){
+		std::vector<float> temp;
+		temp.push_back((-1)*outputCloud.points[i].x);
+		temp.push_back((-1)*outputCloud.points[i].y);
+		temp.push_back((-1)*outputCloud.points[i].z);
+		data.push_back(temp);
+	}
+	/*change value into string*/
+	quadprogpp::Matrix<double> G, CE, CI;
+	quadprogpp::Vector<double> g0, ce0, ci0, x;
+	int n, m, p;
+
+	n = 3; // xyz 3-dimension
+	G.resize(n, n);
+	for (int i = 0; i < n; i++){
+		for (int j = 0; j < n; j++){
+			if(i==j) G[i][j] = 1;
+			else G[i][j] = 0;
+		}
+	}
+	g0.resize(n);
+	for (int i = 0; i < n ; i++){
+		g0[i] = - 0.5*u[i];
+	}
+
+	m = 1;
+	CE.resize(n, m);
+	for (int i = 0; i < n; i++){
+		for (int j = 0; j < m; j++){
+			if(i==j) CE[i][j] = 0;
+			else CE[i][j] = 0;
+		}
+	}
+	ce0.resize(m);
+	for (int i = 0; i < n ; i++){
+		ce0[i] = 0;
+	}
+
+	p = EQU_NUM;
+	std::vector<float> square_sum;
+	
+	CI.resize(n, p);
+	for (int i = 0; i < p; i++){
+		float sum = 0.0;
+		for (int j = 0; j < n; j++){
+			CI[i][j]= 2*data[i][j];
+			sum+=pow(data[i][j],2);
+		}
+		sum -= 2*pow(SAFE_DIS,2);
+		square_sum.push_back(sum);
+	}
+	ci0.resize(p);
+	for (int i = 0; i < n ; i++){
+		ci0[i] = square_sum[i];
+	}
+	x.resize(n);
+	std::cout << "f: " << solve_quadprog(G, g0, CE, ce0, CI, ci0, x) << std::endl;
+	std::cout << "x: " << x << std::endl;
 }
 
 float ecbf::bound(float v){
