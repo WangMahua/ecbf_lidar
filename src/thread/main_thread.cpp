@@ -41,11 +41,15 @@
 
 #define EQU_NUM 100
 
+/*modify velocity*/
 #define UPPER_V 4
 #define LOWER_V -4
 #define DEL_V 0.3
 
+/*parameter od ECBF*/
 #define SAFE_DIS 1
+#define K1 2
+#define K2 2
 
 using namespace std;
 
@@ -76,8 +80,10 @@ private:
 	double last_time = 0.0;
 	bool pose_init_flag = false;
 
+	
+
 	ros::NodeHandle n;
-	ros::Publisher debug_rc_pub,debug_qp_pub,debug_hz_pub,debug_vel_pub;
+	ros::Publisher debug_rc_pub,debug_qp_pub,debug_hz_pub,debug_vel_pub,debug_outputclound_pub;
 	ros::Subscriber lidar_sub, pos_sub;
 	ros::ServiceClient client;
 
@@ -89,6 +95,8 @@ private:
 
 	pcl::PointCloud<pcl::PointXYZ> inputCloud;
 	pcl::PointCloud<pcl::PointXYZ> outputCloud;
+
+	
 
 public:
 	ecbf();
@@ -119,6 +127,7 @@ ecbf::ecbf(){
 	debug_qp_pub = n.advertise<ecbf_lidar::acc_compare>("qp_info", 1); 
 	debug_hz_pub = n.advertise<std_msgs::Float32>("hz_info", 100); 
 	debug_vel_pub = n.advertise<geometry_msgs::Vector3>("vel_info", 1); 
+	debug_outputclound_pub = n.advertise<sensor_msgs::PointCloud2>("lidar_info", 1); 
 	lidar_sub = n.subscribe<sensor_msgs::LaserScan>("scan", 1, &ecbf::scan_callback, this); 
 	pos_sub = n.subscribe("/vrpn_client_node/MAV1/pose", 1, &ecbf::pos_callback, this); 
 }
@@ -142,15 +151,16 @@ void ecbf::qp_solve(){
 	std::vector<std::vector<float>> data;
 	for(int i =0;i<outputCloud.points.size();i++){
 		std::vector<float> temp;
-		temp.push_back((-1)*outputCloud.points[i].x);
-		temp.push_back((-1)*outputCloud.points[i].y);
-		temp.push_back((-1)*outputCloud.points[i].z);
-		cout <<"insert_data: x:" << temp[0] << " y: "<<temp[1] <<" z:"<<temp[2]<< endl;
-		
+		temp.push_back(-1*outputCloud.points[i].x);
+		temp.push_back(-1*outputCloud.points[i].y);
+		temp.push_back(-1*outputCloud.points[i].z);
+		//cout << "insert x:"<< outputCloud.points[i].x<< " y:"<< outputCloud.points[i].y<<" z:"<<outputCloud.points[i].z<<endl;
 		data.push_back(temp);
 	}
+/*
 	cout << "size of data:" <<data.size() <<endl;
 	cout << "size of data:" <<data[0].size() <<endl;
+*/
 	/*change value into string*/
 	quadprogpp::Matrix<double> G, CE, CI;
 	quadprogpp::Vector<double> g0, ce0, ci0, x;
@@ -176,22 +186,34 @@ void ecbf::qp_solve(){
 	p = EQU_NUM;
 	std::vector<float> square_sum;
 	
+	/*2(P-PCL)*/
 	CI.resize(n, p);
 	for (int i = 0; i < p; i++){
 		float sum = 0.0;
 		for (int j = 0; j < n; j++){
-			CI[j][i]= 2*data[i][j];
+			CI[j][i]= data[i][j];
 			sum+=pow(data[i][j],2);
 		}
-		sum -= 2*pow(SAFE_DIS,2);
+		sum -= pow(SAFE_DIS,2);
 		square_sum.push_back(sum);
 	}
+	/*sum of vel suare*/
+	float vel_square_sum = 0.0;
+	for (int i =0;i<3;i++){
+		vel_square_sum +=pow(vel[i],2);
+	}
+
 	ci0.resize(p);
-	for (int i = 0; i < n ; i++){
-		ci0[i] = square_sum[i];
+	for (int i = 0; i < p ; i++){
+		float temp_sum = 0.0;
+		for(int j =0;j<3;j++){
+			temp_sum+=2*data[i][j]*vel[j];
+		}
+		ci0[i] = 2*vel_square_sum + K1*square_sum[i]+K2*temp_sum;
 	}
 	x.resize(n);
 	std::cout << "f: " << solve_quadprog(G, g0, CE, ce0, CI, ci0, x) << std::endl;
+	std::cout << "u: " << "x: "<<u[0] << " y: "<<u[1]<< " z: "<<u[2]<< std::endl;
 	std::cout << "x: " << x << std::endl;
 
 
@@ -287,12 +309,14 @@ void ecbf::reduce_pcl(){
 				}
 			}
 		}
+/*
 		cout << "---"<< endl;
 		cout << "ms: "<< min_ms << endl;
 		cout << "j: "<< min_idx << endl;
 		cout << "x: " << inputCloud.points[min_idx].x  << endl;
 		cout << "y: " << inputCloud.points[min_idx].y  << endl;
 		cout << "z: " << inputCloud.points[min_idx].z  << endl;
+*/
 		outputCloud.push_back(inputCloud.points[min_idx]);
 	}
 }
@@ -337,6 +361,7 @@ void ecbf::debug_pub(){
 	ecbf_lidar::rc_compare debug_rc;
 	ecbf_lidar::acc_compare debug_qp;
 	geometry_msgs::Vector3 debug_vel;
+	sensor_msgs::PointCloud2 cloud;
 	
 	debug_rc.origin_roll = user_rc_input[0];
 	debug_rc.origin_pitch = user_rc_input[1];
@@ -361,6 +386,10 @@ void ecbf::debug_pub(){
 	debug_vel.z = vel[2];
 
 	debug_vel_pub.publish(debug_vel);
+
+	toROSMsg(outputCloud, cloud);
+	cloud.header.frame_id = "map";
+	debug_outputclound_pub.publish(cloud);
 
 }
 
