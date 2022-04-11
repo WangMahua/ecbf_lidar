@@ -577,10 +577,14 @@ void imu_buf_push(uint8_t c){
 }
 int uart_thread_entry(){
 	ros::NodeHandle k;
-	
-    ros::Rate loop_rate(400);
+    //ros::Rate loop_rate(400);
 	char c;
 	imu.buf_pos = 0;
+
+
+	ecbf ecbf_process;
+	uint8_t last_ecbf_mode = 0;
+
 
 	cout<<"start\n";
 	while(ros::ok()){
@@ -589,16 +593,51 @@ int uart_thread_entry(){
 			imu_buf_push(c); 
 			if(imu.buf[0]=='@' && imu.buf[IMU_SERIAL_MSG_SIZE-1] == '+'){
 				if(imu_decode(imu.buf)==0){
-/*
-					cout<<"rc info in uart:"<<endl;
-					cout<<"rc.mode: "<<rc_ecbf_mode<<"\n";
-					cout<<"rc.roll: "<<rc_value[0]<<"\n";
-					cout<<"rc.pitch: "<<rc_value[1]<<"\n";
-					cout<<"rc.yaw: "<<rc_value[2]<<"\n";
-					cout<<"rc.throttle: "<<rc_value[3]<<"\n";
+
+
+					if(rc_ecbf_mode>2.1){
+						rc_ecbf_mode = last_ecbf_mode;
+					}
+					rc_data rc = { .roll = rc_value[0], \
+									.pitch = rc_value[1], \
+									.yaw = rc_value[2], \
+									.throttle = rc_value[3], \
+									.mode = rc_ecbf_mode };
+					last_ecbf_mode = rc_ecbf_mode;
+					
+					/*
+					cout<<"rc info in lidar:"<<endl;
+					cout<<"rc.mode: "<<rc.mode<<"\n";
+					cout<<"rc.roll: "<<rc.roll<<"\n";
+					cout<<"rc.pitch: "<<rc.pitch<<"\n";
+					cout<<"rc.yaw: "<<rc.yaw<<"\n";
+					cout<<"rc.throttle: "<<rc.throttle<<"\n";
 					cout<<"==="<<endl;
-*/
-					loop_rate.sleep();			
+					*/
+					ros::Time begin_time = ros::Time::now();
+
+					ecbf_process.get_desire_rc_input(rc);
+					
+					ecbf_process.process();
+					ecbf_process.get_sol(pub_to_controller);
+					pub_to_controller[2]=rc.throttle;
+
+					/* calculate time */
+					ros::Time now_time = ros::Time::now();
+					float clustering_time = 0.0 ;
+					clustering_time = (now_time - begin_time).toSec();
+					ecbf_process.debug_hz(clustering_time); // hz record 
+					cout << "hz:"<< 1/clustering_time <<endl; //hz test
+
+
+					//loop_rate.sleep();
+
+
+					if(DEBUG_FLAG == 0){
+						send_pose_to_serial(pub_to_controller[0],pub_to_controller[1],rc_value[3],0.0,0.0,0.0,0.0,0.0,0.0,0.0);
+					}else{
+						send_pose_to_serial(rc_value[0],rc_value[1],rc_value[3],0.0,0.0,0.0,0.0,0.0,0.0,0.0);
+					}			
 				}
 			}
 		}
@@ -610,12 +649,10 @@ int uart_thread_entry(){
 
 
 int lidar_thread_entry(){
-	char c;
-	imu.buf_pos = 0;
+
+	ros::Rate loop2_rate(100);
 	ecbf ecbf_process;
 	uint8_t last_ecbf_mode = 0;
-	ros::Rate loop2_rate(100);
-
 	while(ros::ok()){
 		
 		if(rc_ecbf_mode>2.1){
