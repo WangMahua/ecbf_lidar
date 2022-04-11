@@ -111,6 +111,7 @@ public:
 	void process();
 	void reduce_pcl();
 	float bound(float);
+	float bound(float,float);
 	void fix_vel();
 	float fix_vel(float ,float );
 
@@ -128,8 +129,8 @@ ecbf::ecbf(){
 	debug_hz_pub = n.advertise<std_msgs::Float32>("hz_info", 100); 
 	debug_vel_pub = n.advertise<geometry_msgs::Vector3>("vel_info", 1); 
 	debug_outputclound_pub = n.advertise<sensor_msgs::PointCloud2>("lidar_info", 1); 
-	lidar_sub = n.subscribe<sensor_msgs::LaserScan>("scan", 1, &ecbf::scan_callback, this); 
-	pos_sub = n.subscribe("/vrpn_client_node/MAV1/pose", 1, &ecbf::pos_callback, this); 
+	lidar_sub = n.subscribe<sensor_msgs::LaserScan>("scan", 10, &ecbf::scan_callback, this); 
+	pos_sub = n.subscribe("/vrpn_client_node/MAV1/pose", 10, &ecbf::pos_callback, this); 
 }
 
 
@@ -217,8 +218,8 @@ void ecbf::qp_solve(){
 	std::cout << "x: " << x << std::endl;
 
 
-	ecbf_acc[0] = x[0] ;
-	ecbf_acc[1] = x[1] ;
+	ecbf_acc[0] = bound(x[0],10) ;
+	ecbf_acc[1] = bound(x[1],10) ;
 	//ecbf_acc[2] = srv.response.ecbf_output[2] ;
 	ecbf_acc[2] = user_rc_input[3]; //do not change throttle
 }
@@ -230,6 +231,16 @@ float ecbf::bound(float v){
 		v = LOWER_V;
 	}
 	return v;
+}
+float ecbf::bound(float a,float l){
+	
+	float l_l = -1*l;
+	if(a>l){
+		a = l;
+	}else if(a<l_l){
+		a = l_l;
+	}
+	return a;
 }
 
 void ecbf::fix_vel(){
@@ -322,6 +333,7 @@ void ecbf::reduce_pcl(){
 }
 
 void ecbf::scan_callback(const sensor_msgs::LaserScan::ConstPtr& msg){
+	ros::Time begin_time_pcl = ros::Time::now();
 	sensor_msgs::PointCloud2 input_pointcloud;
 
     projector.projectLaser(*msg, input_pointcloud); // laserscan to pcl2
@@ -329,6 +341,13 @@ void ecbf::scan_callback(const sensor_msgs::LaserScan::ConstPtr& msg){
 	std::cout <<"input cloud size : " <<inputCloud.points.size()<<std::endl;
 	reduce_pcl();
 	std::cout <<"output cloud size : " <<outputCloud.points.size()<<std::endl;
+
+	/* calculate time */
+	ros::Time now_time_pcl = ros::Time::now();
+	float clustering_time_pcl = 0.0 ;
+	clustering_time_pcl = (now_time_pcl - begin_time_pcl).toSec();
+
+	cout << "hz in pcl:"<< 1/clustering_time_pcl <<endl; //hz test
 }
 
 void ecbf::get_desire_rc_input(float rc_roll,float rc_pitch,\
@@ -386,11 +405,11 @@ void ecbf::debug_pub(){
 	debug_vel.z = vel[2];
 
 	debug_vel_pub.publish(debug_vel);
-
+/*
 	toROSMsg(outputCloud, cloud);
 	cloud.header.frame_id = "map";
 	debug_outputclound_pub.publish(cloud);
-
+*/
 }
 
 void ecbf::debug_hz(float a){
