@@ -29,6 +29,7 @@ find_package(catkin REQUIRED COMPONENTS
 
 find_package(osqp REQUIRED)
 find_package(PCL REQUIRED)
+
 include_directories(${PCL_INCLUDE_DIRS})
 link_directories(${PCL_LIBRARY_DIRS})
 add_definitions(${PCL_DEFINITIONS})
@@ -247,6 +248,7 @@ link_directories(
 
 add_executable(ecbf_controller
   src/thread/main_thread.cpp
+  #src/thread/kalman_filter.cpp
   src/serial.cpp
   src/main.cpp
 )
