@@ -273,7 +273,10 @@ void ecbf::pos_callback(const geometry_msgs::PoseStamped::ConstPtr& msg){
 			pos[0] = msg->pose.position.x;
 			pos[1] = msg->pose.position.y;
 			pos[2] = msg->pose.position.z;
-			*last_pos = *pos;
+			for(int i =0;i<3;i++){
+				last_pos[i]=pos[i];
+				last_vel[i]=vel[i];
+			}
 			last_vel_time = now_vel_time;
 			pose_init_flag = true;	
 		}
@@ -284,15 +287,18 @@ void ecbf::pos_callback(const geometry_msgs::PoseStamped::ConstPtr& msg){
 			pos[0] = msg->pose.position.x;
 			pos[1] = msg->pose.position.y;
 			pos[2] = msg->pose.position.z;
-			vel[0] =(pos[0] - last_pos[0])/clustering_time;
-			vel[1] =(pos[1] - last_pos[1])/clustering_time;
-			vel[2] =(pos[2] - last_pos[2])/clustering_time;
+			for (int i =0;i<3;i++){
+				vel[i] = (pos[i] - last_pos[i])/clustering_time;
+				vel[i] = 1*(last_vel[i] + (vel[i] - last_vel[i])/clustering_time)+0*vel[i];
+			}
 			fix_vel();
 			for(int i =0;i<3;i++){
 				last_pos[i]=pos[i];
 				last_vel[i]=vel[i];
 				cout << vel[i] << endl;
 			}
+			
+			
 			last_vel_time = now_vel_time;
 		}
 }
@@ -603,6 +609,7 @@ int uart_thread_entry(){
 									.yaw = rc_value[2], \
 									.throttle = rc_value[3], \
 									.mode = rc_ecbf_mode };
+
 					last_ecbf_mode = rc_ecbf_mode;
 					
 					/*
@@ -641,7 +648,7 @@ int uart_thread_entry(){
 				}
 			}
 		}
-		
+		ros::spinOnce();
 	}
 	return 0;
 
@@ -687,7 +694,7 @@ int lidar_thread_entry(){
 		float clustering_time = 0.0 ;
 		clustering_time = (now_time - begin_time).toSec();
 		ecbf_process.debug_hz(clustering_time); // hz record 
-		cout << "hz:"<< 1/clustering_time <<endl; //hz test
+		cout << "hz in uart thread:"<< 1/clustering_time <<endl; //hz test
 		
 		loop2_rate.sleep();
 		ros::spinOnce();
