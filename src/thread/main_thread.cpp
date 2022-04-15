@@ -59,10 +59,12 @@
 /* parameter of kalman filter */
 /* n : Number of states       */
 /* m : Number of measurements */
-int s_n = 6;
-int m_n = 3;
+const int s_n = 2;
+const int m_n = 1;
 
 using namespace std;
+using Eigen::MatrixXd;
+using Eigen::VectorXd;
 
 double pub_to_controller[3];
 float per2thrust_coeff[6] = {930.56,-3969,4983.2,-1664.5,482.08,-7.7146};
@@ -89,6 +91,7 @@ private:
 	/* calculate velocity */
 	double pos[3] = {0,0,0};
 	double vel[3] = {0,0,0};
+	double vel_kf[3] = {0,0,0};
 	double last_vel[3] = {0,0,0};
 	double last_pos[3] = {0,0,0};
 	double last_time = 0.0;
@@ -99,7 +102,7 @@ private:
 	
 
 	ros::NodeHandle n;
-	ros::Publisher debug_rc_pub,debug_qp_pub,debug_hz_pub,debug_vel_pub,debug_outputclound_pub;
+	ros::Publisher debug_rc_pub,debug_qp_pub,debug_hz_pub,debug_vel_pub,debug_vel_kf_pub,debug_outputclound_pub;
 	ros::Subscriber lidar_sub, pos_sub;
 	ros::ServiceClient client;
 
@@ -112,28 +115,36 @@ private:
 	pcl::PointCloud<pcl::PointXYZ> inputCloud;
 	pcl::PointCloud<pcl::PointXYZ> outputCloud;
 
-	Eigen::MatrixXd A,B,C,Q,R,P,P0,I,K;
-	Eigen::VectorXd x_hat, x_hat_new,y;
-
+	MatrixXd A;
+	MatrixXd B,C,Q,R,P,I,K;
+	VectorXd x_hat, x_hat_new,y;
+	
 public:
 	ecbf();
-	void get_desire_rc_input(float,float,float,float,int);
 	void get_desire_rc_input(rc_data);
-	float bound_rc(float);
-	void debug_pub();
-	void debug_hz(float);
+	void get_sol(double*); 
 	void acc_cal();
 	void rc_cal(float*);
-	void get_sol(double*);
 	void process();
+
+	/* debug */
+	void debug_pub();
+	void debug_hz(float);
+
+	/* pcl */
 	void reduce_pcl();
 
+	/* limitation of vel and rc */
 	float bound(float);
 	float bound(float,float);
+	float bound_rc(float);
 	void fix_vel();
 	float fix_vel(float,float);
 
+	/* qp solver */
 	void qp_solve();
+
+	/* kalman filter to get vel */
 	void vel_filter(float, float, int);
 
 	/* ros callback function */
@@ -141,36 +152,46 @@ public:
 	void pos_callback(const geometry_msgs::PoseStamped::ConstPtr&);
 };
 
-ecbf::ecbf(){
+ecbf::ecbf():A(s_n,s_n),B(s_n,m_n),C(m_n,s_n),Q(s_n,s_n),R(m_n,m_n),P(s_n,s_n),x_hat(2),y(1),I(s_n,s_n),K(2,1){
 	/* ros service and topic declare*/
 	client = n.serviceClient<ecbf_lidar::qp>("qp");
 	debug_rc_pub = n.advertise<ecbf_lidar::rc_compare>("rc_info", 1); 
 	debug_qp_pub = n.advertise<ecbf_lidar::acc_compare>("qp_info", 1); 
 	debug_hz_pub = n.advertise<std_msgs::Float32>("hz_info", 100); 
 	debug_vel_pub = n.advertise<geometry_msgs::Vector3>("vel_info", 1); 
+	debug_vel_kf_pub = n.advertise<geometry_msgs::Vector3>("vel_kf_info", 1); 
 	debug_outputclound_pub = n.advertise<sensor_msgs::PointCloud2>("lidar_info", 1); 
 	lidar_sub = n.subscribe<sensor_msgs::LaserScan>("scan", 10, &ecbf::scan_callback, this); 
 	pos_sub = n.subscribe("/vrpn_client_node/MAV1/pose", 10, &ecbf::pos_callback, this); 
+	
 	A << 1,0,1,0;
 	B << 0,1;
 	C << 1,0;
 	Q << 1e-6,0,0,1e-5;
 	R << 1e-5;
-	P0 << 1e-4,0,0,1e-4;
+	P << 1e-4,0,0,1e-4;
+
 	x_hat.setZero();
 	y.setZero();
+	K.setIdentity();
 	I.setIdentity();
 }
 
 void ecbf::vel_filter(float new_p,float dt,int d){
-	y << new_p,0;
+	y(0)=new_p;
 	// x_hat(0) = pos[d];
 	// x_hat(1) = vel[d];
+	VectorXd x_hat_new(2);
 	A(0,1) = dt;
+
 	x_hat_new = A * x_hat;
+
 	P = A*P*A.transpose() + Q;
+
 	K = P*C.transpose()*(C*P*C.transpose() + R).inverse();
+	cout<<"~"<<endl;
 	x_hat_new += K * (y - C*x_hat_new);
+	cout<<"~~"<<endl;
 	P = (I - K*C)*P;
 	x_hat = x_hat_new;
 }
@@ -188,11 +209,10 @@ void ecbf::qp_solve(){
 		temp.push_back(-1*outputCloud.points[i].x);
 		temp.push_back(-1*outputCloud.points[i].y);
 		temp.push_back(-1*outputCloud.points[i].z);
-		//cout << "insert x:"<< outputCloud.points[i].x<< " y:"<< outputCloud.points[i].y<<" z:"<<outputCloud.points[i].z<<endl;
 		data.push_back(temp);
 	}
 
-	/* change value into string */
+	/* qp matrix give value */
 	quadprogpp::Matrix<double> G, CE, CI;
 	quadprogpp::Vector<double> g0, ce0, ci0, x;
 	int n, m, p;
@@ -247,7 +267,7 @@ void ecbf::qp_solve(){
 	std::cout << "u: " << "x: "<<u[0] << " y: "<<u[1]<< " z: "<<u[2]<< std::endl;
 	std::cout << "x: " << x << std::endl;
 
-	/* We do not change throttle*/
+	/* We do not change throttle */
 	ecbf_acc[0] = bound(x[0],10) ;
 	ecbf_acc[1] = bound(x[1],10) ;
 	//ecbf_acc[2] = bound(x[2],10) ;
@@ -319,7 +339,7 @@ void ecbf::pos_callback(const geometry_msgs::PoseStamped::ConstPtr& msg){
 			pos[2] = msg->pose.position.z;
 			for(int i =0;i<3;i++){
 				vel_filter(pos[i],clustering_time,i);
-				cout << x_hat<<endl;
+				vel_kf[i]= x_hat[1];
 			}
 
 			for (int i =0;i<3;i++){
@@ -328,12 +348,16 @@ void ecbf::pos_callback(const geometry_msgs::PoseStamped::ConstPtr& msg){
 			}
 			
 			fix_vel();
+			cout <<"vel" <<endl;
 			for(int i =0;i<3;i++){
 				last_pos[i]=pos[i];
 				last_vel[i]=vel[i];
 				cout << vel[i] << endl;
 			}
-			
+			cout <<"vel from kf" <<endl;
+			for(int i =0;i<3;i++){
+				cout << vel_kf[i] << endl;
+			}
 			
 			last_vel_time = now_vel_time;
 		}
@@ -372,31 +396,17 @@ void ecbf::scan_callback(const sensor_msgs::LaserScan::ConstPtr& msg){
 
     projector.projectLaser(*msg, input_pointcloud); // laserscan to pcl2
     pcl::fromROSMsg(input_pointcloud, inputCloud);
-	std::cout <<"input cloud size : " <<inputCloud.points.size()<<std::endl;
+	//std::cout <<"input cloud size : " <<inputCloud.points.size()<<std::endl;
 	reduce_pcl();
-	std::cout <<"output cloud size : " <<outputCloud.points.size()<<std::endl;
+	//std::cout <<"output cloud size : " <<outputCloud.points.size()<<std::endl;
 
 	/* calculate time */
 	ros::Time now_time_pcl = ros::Time::now();
 	float clustering_time_pcl = 0.0 ;
 	clustering_time_pcl = (now_time_pcl - begin_time_pcl).toSec();
-
 	cout << "hz in pcl:"<< 1/clustering_time_pcl <<endl; //hz test
 }
 
-void ecbf::get_desire_rc_input(float rc_roll,float rc_pitch,\
-	float rc_yaw,float rc_throttle,int rc_mode){
-	user_rc_input[0] = rc_roll;
-	user_rc_input[1] = rc_pitch;
-	user_rc_input[2] = rc_yaw;
-	user_rc_input[3] = rc_throttle;
-
-	if(rc_mode>1.1){
-		ecbf_mode = true ; 
-	}else{
-		ecbf_mode = false ; 
-	}
-}
 void ecbf::get_desire_rc_input(rc_data rc_){
 	user_rc_input[0] = rc_.roll;
 	user_rc_input[1] = rc_.pitch;
@@ -414,6 +424,7 @@ void ecbf::debug_pub(){
 	ecbf_lidar::rc_compare debug_rc;
 	ecbf_lidar::acc_compare debug_qp;
 	geometry_msgs::Vector3 debug_vel;
+	geometry_msgs::Vector3 debug_vel_kf;
 	sensor_msgs::PointCloud2 cloud;
 	
 	debug_rc.origin_roll = user_rc_input[0];
@@ -439,11 +450,17 @@ void ecbf::debug_pub(){
 	debug_vel.z = vel[2];
 
 	debug_vel_pub.publish(debug_vel);
-/*
-	toROSMsg(outputCloud, cloud);
-	cloud.header.frame_id = "map";
-	debug_outputclound_pub.publish(cloud);
-*/
+
+	debug_vel_kf.x = vel_kf[0];
+	debug_vel_kf.y = vel_kf[1];
+	debug_vel_kf.z = vel_kf[2];
+
+	debug_vel_kf_pub.publish(debug_vel_kf);
+
+	//toROSMsg(outputCloud, cloud);
+	//cloud.header.frame_id = "map";
+	//debug_outputclound_pub.publish(cloud);
+
 }
 
 void ecbf::debug_hz(float a){
@@ -464,14 +481,14 @@ float ecbf::bound_rc(float v){
 void ecbf::process(){
 
 	if(ecbf_mode==true && lidar_init_flag==true){
-		acc_cal(); // change rc info to acc
+		acc_cal(); 
 		qp_solve();
 		rc_cal(ecbf_rc);
 		
 	}else{
 		for (int i = 0;i<3;i++) ecbf_rc[i] = user_rc_input[i]; //[0]:roll [1]:pitch [2]:throttle
-		if(ecbf_mode!=true) ROS_ERROR("ecbf not trigger!");
-		else ROS_ERROR("Failed to calc");
+		if(ecbf_mode!=true) cout<<"ecbf not trigger!"<<endl;
+		else cout<<"lidar has yet to initialize."<<endl;
 	}
 
 	debug_pub();
@@ -528,7 +545,7 @@ void ecbf::get_sol(double* d){
 	d[2] = ecbf_rc[2];
 }
 
-//** uart **//
+
 uint8_t generate_imu_checksum_byte(uint8_t *payload, int payload_count){
 	uint8_t result = IMU_CHECKSUM_INIT_VAL;
 
@@ -583,18 +600,19 @@ void imu_buf_push(uint8_t c){
 		imu.buf_pos++;
 	}
 }
+
 int uart_thread_entry(){
 	ros::NodeHandle k;
     //ros::Rate loop_rate(400);
 	char c;
 	imu.buf_pos = 0;
 
-
+	cout<<"start123\n";
 	ecbf ecbf_process;
 	uint8_t last_ecbf_mode = 0;
 
 
-	cout<<"start\n";
+
 	while(ros::ok()){
 		
 		if(serial_getc(&c) != -1) {
@@ -637,7 +655,7 @@ int uart_thread_entry(){
 					float clustering_time = 0.0 ;
 					clustering_time = (now_time - begin_time).toSec();
 					ecbf_process.debug_hz(clustering_time); // hz record 
-					cout << "hz:"<< 1/clustering_time <<endl; //hz test
+					//cout << "hz:"<< 1/clustering_time <<endl; //hz test
 
 
 					//loop_rate.sleep();
