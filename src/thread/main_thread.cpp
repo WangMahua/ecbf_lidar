@@ -15,6 +15,8 @@
 #include <pcl/point_types.h>
 #include <pcl/filters/passthrough.h>
 #include <pcl/point_cloud.h>
+#include <pcl/io/pcd_io.h>
+#include <pcl/filters/voxel_grid.h>
 #include "pcl_ros/point_cloud.h"
 
 #include "tf/transform_listener.h"
@@ -60,13 +62,13 @@
 /* n : Number of states       */
 /* m : Number of measurements */
 const int s_n = 2;
-const int m_n = 1;
+const int m_n = 2;
 
 using namespace std;
 using Eigen::MatrixXd;
 using Eigen::VectorXd;
 
-double pub_to_controller[3];
+float pub_to_controller[3];
 float per2thrust_coeff[6] = {930.56,-3969,4983.2,-1664.5,482.08,-7.7146};
 float thrust2per_coeff[6] = {-1.11e-15,-3.88e-12,1.09e-8,-8.63e-6,3.62e-3,0};
 
@@ -91,6 +93,7 @@ private:
 	/* calculate velocity */
 	double pos[3] = {0,0,0};
 	double vel[3] = {0,0,0};
+	double pos_kf[3] = {0,0,0};
 	double vel_kf[3] = {0,0,0};
 	double last_vel[3] = {0,0,0};
 	double last_pos[3] = {0,0,0};
@@ -102,7 +105,7 @@ private:
 	
 
 	ros::NodeHandle n;
-	ros::Publisher debug_rc_pub,debug_qp_pub,debug_hz_pub,debug_vel_pub,debug_vel_kf_pub,debug_outputclound_pub;
+	ros::Publisher debug_rc_pub,debug_qp_pub,debug_hz_pub,debug_vel_pub,debug_vel_kf_pub,debug_pos_kf_pub,debug_outputclound_pub;
 	ros::Subscriber lidar_sub, pos_sub;
 	ros::ServiceClient client;
 
@@ -115,14 +118,13 @@ private:
 	pcl::PointCloud<pcl::PointXYZ> inputCloud;
 	pcl::PointCloud<pcl::PointXYZ> outputCloud;
 
-	MatrixXd A;
-	MatrixXd B,C,Q,R,P,I,K;
+	MatrixXd A,B,C,Q,R,P,I,K;
 	VectorXd x_hat, x_hat_new,y;
 	
 public:
 	ecbf();
 	void get_desire_rc_input(rc_data);
-	void get_sol(double*); 
+	void get_sol(float*); 
 	void acc_cal();
 	void rc_cal(float*);
 	void process();
@@ -145,14 +147,14 @@ public:
 	void qp_solve();
 
 	/* kalman filter to get vel */
-	void vel_filter(float, float, int);
+	void vel_filter(float, float, float, int);
 
 	/* ros callback function */
 	void scan_callback(const sensor_msgs::LaserScan::ConstPtr&);
 	void pos_callback(const geometry_msgs::PoseStamped::ConstPtr&);
 };
 
-ecbf::ecbf():A(s_n,s_n),B(s_n,m_n),C(m_n,s_n),Q(s_n,s_n),R(m_n,m_n),P(s_n,s_n),x_hat(2),y(1),I(s_n,s_n),K(2,1){
+ecbf::ecbf():A(s_n,s_n),C(m_n,s_n),Q(s_n,s_n),R(m_n,m_n),P(s_n,s_n),x_hat(s_n),y(m_n),I(s_n,s_n),K(s_n,s_n){
 	/* ros service and topic declare*/
 	client = n.serviceClient<ecbf_lidar::qp>("qp");
 	debug_rc_pub = n.advertise<ecbf_lidar::rc_compare>("rc_info", 1); 
@@ -160,38 +162,34 @@ ecbf::ecbf():A(s_n,s_n),B(s_n,m_n),C(m_n,s_n),Q(s_n,s_n),R(m_n,m_n),P(s_n,s_n),x
 	debug_hz_pub = n.advertise<std_msgs::Float32>("hz_info", 100); 
 	debug_vel_pub = n.advertise<geometry_msgs::Vector3>("vel_info", 1); 
 	debug_vel_kf_pub = n.advertise<geometry_msgs::Vector3>("vel_kf_info", 1); 
+	debug_pos_kf_pub = n.advertise<geometry_msgs::Vector3>("pos_kf_info", 1); 
 	debug_outputclound_pub = n.advertise<sensor_msgs::PointCloud2>("lidar_info", 1); 
 	lidar_sub = n.subscribe<sensor_msgs::LaserScan>("scan", 10, &ecbf::scan_callback, this); 
 	pos_sub = n.subscribe("/vrpn_client_node/MAV1/pose", 10, &ecbf::pos_callback, this); 
 	
-	A << 1,0,1,0;
-	B << 0,1;
-	C << 1,0;
-	Q << 1e-6,0,0,1e-5;
-	R << 1e-5;
+	cout<<"!!"<<endl;
+	A << 1,0,0,1;
+	C << 1,0,0,1;
+	Q << 1e-6,0,0,1e-6;
+	R << 1e-5,0,0,1e-5;
 	P << 1e-4,0,0,1e-4;
 
 	x_hat.setZero();
 	y.setZero();
+	cout<<"!@!"<<endl;
 	K.setIdentity();
 	I.setIdentity();
 }
 
-void ecbf::vel_filter(float new_p,float dt,int d){
+void ecbf::vel_filter(float new_p,float new_v,float dt,int d){
 	y(0)=new_p;
-	// x_hat(0) = pos[d];
-	// x_hat(1) = vel[d];
+	y(1)=new_v;
 	VectorXd x_hat_new(2);
 	A(0,1) = dt;
-
 	x_hat_new = A * x_hat;
-
 	P = A*P*A.transpose() + Q;
-
 	K = P*C.transpose()*(C*P*C.transpose() + R).inverse();
-	cout<<"~"<<endl;
 	x_hat_new += K * (y - C*x_hat_new);
-	cout<<"~~"<<endl;
 	P = (I - K*C)*P;
 	x_hat = x_hat_new;
 }
@@ -337,26 +335,27 @@ void ecbf::pos_callback(const geometry_msgs::PoseStamped::ConstPtr& msg){
 			pos[0] = msg->pose.position.x;
 			pos[1] = msg->pose.position.y;
 			pos[2] = msg->pose.position.z;
-			for(int i =0;i<3;i++){
-				vel_filter(pos[i],clustering_time,i);
-				vel_kf[i]= x_hat[1];
-			}
 
 			for (int i =0;i<3;i++){
 				vel[i] = (pos[i] - last_pos[i])/clustering_time;
 				vel[i] = 1*(last_vel[i] + (vel[i] - last_vel[i])/clustering_time)+0*vel[i];
+				vel[i] = fix_vel(vel[i],last_vel[i]);
+				//vel_filter(pos[i],vel[i],clustering_time,i);
+				//vel_kf[i]= x_hat[1];
+				//pos_kf[i]= x_hat[0];
+
 			}
 			
-			fix_vel();
-			cout <<"vel" <<endl;
+			//fix_vel();
+			//cout <<"vel" <<endl;
 			for(int i =0;i<3;i++){
 				last_pos[i]=pos[i];
 				last_vel[i]=vel[i];
-				cout << vel[i] << endl;
+				//cout << vel[i] << endl;
 			}
-			cout <<"vel from kf" <<endl;
+			//cout <<"vel from kf" <<endl;
 			for(int i =0;i<3;i++){
-				cout << vel_kf[i] << endl;
+				//cout << vel_kf[i] << endl;
 			}
 			
 			last_vel_time = now_vel_time;
@@ -391,11 +390,23 @@ void ecbf::reduce_pcl(){
 }
 
 void ecbf::scan_callback(const sensor_msgs::LaserScan::ConstPtr& msg){
+	lidar_init_flag = true;
 	ros::Time begin_time_pcl = ros::Time::now();
 	sensor_msgs::PointCloud2 input_pointcloud;
 
     projector.projectLaser(*msg, input_pointcloud); // laserscan to pcl2
+
     pcl::fromROSMsg(input_pointcloud, inputCloud);
+
+
+	pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_ptr(new pcl::PointCloud<pcl::PointXYZ>);
+	cloud_ptr=inputCloud.makeShared();
+	pcl::VoxelGrid<pcl::PointXYZ> sor_map;
+	sor_map.setInputCloud (cloud_ptr);
+	sor_map.setLeafSize (0.5f, 0.5f, 0.5f);
+	sor_map.filter (*cloud_ptr);
+	inputCloud=*cloud_ptr;
+
 	//std::cout <<"input cloud size : " <<inputCloud.points.size()<<std::endl;
 	reduce_pcl();
 	//std::cout <<"output cloud size : " <<outputCloud.points.size()<<std::endl;
@@ -425,6 +436,7 @@ void ecbf::debug_pub(){
 	ecbf_lidar::acc_compare debug_qp;
 	geometry_msgs::Vector3 debug_vel;
 	geometry_msgs::Vector3 debug_vel_kf;
+	geometry_msgs::Vector3 debug_pos_kf;
 	sensor_msgs::PointCloud2 cloud;
 	
 	debug_rc.origin_roll = user_rc_input[0];
@@ -456,6 +468,12 @@ void ecbf::debug_pub(){
 	debug_vel_kf.z = vel_kf[2];
 
 	debug_vel_kf_pub.publish(debug_vel_kf);
+
+	debug_pos_kf.x = pos_kf[0];
+	debug_pos_kf.y = pos_kf[1];
+	debug_pos_kf.z = pos_kf[2];
+
+	debug_pos_kf_pub.publish(debug_pos_kf);
 
 	//toROSMsg(outputCloud, cloud);
 	//cloud.header.frame_id = "map";
@@ -539,7 +557,7 @@ void ecbf::rc_cal(float* desire_rc){
 	desire_rc[2] =  throttle;
 }
 
-void ecbf::get_sol(double* d){
+void ecbf::get_sol(float* d){
 	d[0] = ecbf_rc[0];
 	d[1] = ecbf_rc[1];
 	d[2] = ecbf_rc[2];
@@ -603,14 +621,15 @@ void imu_buf_push(uint8_t c){
 
 int uart_thread_entry(){
 	ros::NodeHandle k;
-    //ros::Rate loop_rate(400);
+    ros::Rate loop_rate_(400);
 	char c;
 	imu.buf_pos = 0;
 
 	cout<<"start123\n";
 	ecbf ecbf_process;
 	uint8_t last_ecbf_mode = 0;
-
+	ros::Time now_uart_time = ros::Time::now();
+	ros::Time last_uart_time = ros::Time::now();
 
 
 	while(ros::ok()){
@@ -619,7 +638,11 @@ int uart_thread_entry(){
 			imu_buf_push(c); 
 			if(imu.buf[0]=='@' && imu.buf[IMU_SERIAL_MSG_SIZE-1] == '+'){
 				if(imu_decode(imu.buf)==0){
-
+					now_uart_time = ros::Time::now();
+					float clustering_uart_time = 0.0 ;
+					clustering_uart_time = (now_uart_time - last_uart_time).toSec();
+					cout << "hz for uart:"<< 1/clustering_uart_time <<endl; //hz test
+					last_uart_time = now_uart_time;
 
 					if(rc_ecbf_mode>2.1){
 						rc_ecbf_mode = last_ecbf_mode;
@@ -655,22 +678,34 @@ int uart_thread_entry(){
 					float clustering_time = 0.0 ;
 					clustering_time = (now_time - begin_time).toSec();
 					ecbf_process.debug_hz(clustering_time); // hz record 
-					//cout << "hz:"<< 1/clustering_time <<endl; //hz test
+					cout << "hz for qp solver:"<< 1/clustering_time <<endl; //hz test
 
 
-					//loop_rate.sleep();
+					loop_rate_.sleep();
 
 
 					if(DEBUG_FLAG == 0){
 						send_pose_to_serial(pub_to_controller[0],pub_to_controller[1],rc_value[3],0.0,0.0,0.0,0.0,0.0,0.0,0.0);
 					}else{
 						send_pose_to_serial(rc_value[0],rc_value[1],rc_value[3],0.0,0.0,0.0,0.0,0.0,0.0,0.0);
-					}			
+					}	
+					
 				}
 			}
 		}
+		//ros::spinOnce();
+	}
+	return 0;
+
+}
+int ros_thread_entry(){
+   ros::Rate loop_rate(800);
+
+	while(ros::ok()){
+		loop_rate.sleep();
 		ros::spinOnce();
 	}
 	return 0;
 
 }
+

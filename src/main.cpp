@@ -14,6 +14,8 @@ main(int argc ,char **argv){
 	cout << "main start" << endl;           
 	serial_init((char *)"/dev/ttyUSB0", 115200);
 	std::thread uart_thread(uart_thread_entry);
+	std::thread ros_thread(ros_thread_entry);
+	ros_thread.join();
 	uart_thread.join();
 
 	return 0;
