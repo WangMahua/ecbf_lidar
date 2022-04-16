@@ -78,6 +78,9 @@ uint8_t rc_ch7;
 float rc_value[4];
 int rc_ecbf_mode;
 
+std::mutex m_mutex;
+std::mutex l_mutex;
+
 class ecbf{
 private:
 	/* user_rc_input : roll pitch yaw throttle from user remote control */
@@ -120,6 +123,14 @@ private:
 
 	MatrixXd A,B,C,Q,R,P,I,K;
 	VectorXd x_hat, x_hat_new,y;
+
+	/* debug */
+	ecbf_lidar::rc_compare debug_rc;
+	ecbf_lidar::acc_compare debug_qp;
+	geometry_msgs::Vector3 debug_vel;
+	geometry_msgs::Vector3 debug_vel_kf;
+	geometry_msgs::Vector3 debug_pos_kf;
+	sensor_msgs::PointCloud2 cloud;
 	
 public:
 	ecbf();
@@ -167,7 +178,7 @@ ecbf::ecbf():A(s_n,s_n),C(m_n,s_n),Q(s_n,s_n),R(m_n,m_n),P(s_n,s_n),x_hat(s_n),y
 	lidar_sub = n.subscribe<sensor_msgs::LaserScan>("scan", 10, &ecbf::scan_callback, this); 
 	pos_sub = n.subscribe("/vrpn_client_node/MAV1/pose", 10, &ecbf::pos_callback, this); 
 	
-	cout<<"!!"<<endl;
+
 	A << 1,0,0,1;
 	C << 1,0,0,1;
 	Q << 1e-6,0,0,1e-6;
@@ -176,7 +187,6 @@ ecbf::ecbf():A(s_n,s_n),C(m_n,s_n),Q(s_n,s_n),R(m_n,m_n),P(s_n,s_n),x_hat(s_n),y
 
 	x_hat.setZero();
 	y.setZero();
-	cout<<"!@!"<<endl;
 	K.setIdentity();
 	I.setIdentity();
 }
@@ -199,7 +209,7 @@ void ecbf::qp_solve(){
 	double *p_ = pos;
 	double *v_ = vel;
 	float u[3] = {user_acc[0],user_acc[1],user_acc[2]}; // user input 
-
+	m_mutex.lock();
 	/* change pcl point (from callback) to vector */
 	std::vector<std::vector<float>> data;
 	for(int i =0;i<outputCloud.points.size();i++){
@@ -209,67 +219,78 @@ void ecbf::qp_solve(){
 		temp.push_back(-1*outputCloud.points[i].z);
 		data.push_back(temp);
 	}
+	m_mutex.unlock();
+	cout <<"pointcloud size: "<<data.size()<<endl;
+	if (data.size()!=0){
+		
+		/* qp matrix give value */
+		quadprogpp::Matrix<double> G, CE, CI;
+		quadprogpp::Vector<double> g0, ce0, ci0, x;
+		int n, m, p;
 
-	/* qp matrix give value */
-	quadprogpp::Matrix<double> G, CE, CI;
-	quadprogpp::Vector<double> g0, ce0, ci0, x;
-	int n, m, p;
-
-	n = 3; 
-	G.resize(n, n);
-	for (int i = 0; i < n; i++){
-		for (int j = 0; j < n; j++){
-			if(i==j) G[i][j] = 1;
-			else G[i][j] = 0;
+		n = 3; 
+		G.resize(n, n);
+		for (int i = 0; i < n; i++){
+			for (int j = 0; j < n; j++){
+				if(i==j) G[i][j] = 1;
+				else G[i][j] = 0;
+			}
 		}
-	}
-	g0.resize(n);
-	for (int i = 0; i < n ; i++){
-		g0[i] = - 0.5*u[i];
-	}
-
-	m = 0;
-	CE.resize(n, m);
-	ce0.resize(m);
-
-	p = EQU_NUM;
-	std::vector<float> square_sum;
-	
-	/* 2(P-PCL) */
-	CI.resize(n, p);
-	for (int i = 0; i < p; i++){
-		float sum = 0.0;
-		for (int j = 0; j < n; j++){
-			CI[j][i]= data[i][j];
-			sum+=pow(data[i][j],2);
+		g0.resize(n);
+		for (int i = 0; i < n ; i++){
+			g0[i] = - 0.5*u[i];
 		}
-		sum -= pow(SAFE_DIS,2);
-		square_sum.push_back(sum);
-	}
-	/* sum of vel suare */
-	float vel_square_sum = 0.0;
-	for (int i =0;i<3;i++){
-		vel_square_sum +=pow(vel[i],2);
-	}
 
-	ci0.resize(p);
-	for (int i = 0; i < p ; i++){
-		float temp_sum = 0.0;
-		for(int j =0;j<3;j++){
-			temp_sum+=2*data[i][j]*vel[j];
+		m = 0;
+		CE.resize(n, m);
+		ce0.resize(m);
+
+		p = data.size();
+		std::vector<float> square_sum;
+		
+		/* 2(P-PCL) */
+		CI.resize(n, p);
+		for (int i = 0; i < p; i++){
+			float sum = 0.0;
+			for (int j = 0; j < n; j++){
+				CI[j][i]= data[i][j];
+				sum+=pow(data[i][j],2);
+			}
+			sum -= pow(SAFE_DIS,2);
+			square_sum.push_back(sum);
 		}
-		ci0[i] = 2*vel_square_sum + K1*square_sum[i]+K2*temp_sum;
-	}
-	x.resize(n);
-	std::cout << "f: " << solve_quadprog(G, g0, CE, ce0, CI, ci0, x) << std::endl;
-	std::cout << "u: " << "x: "<<u[0] << " y: "<<u[1]<< " z: "<<u[2]<< std::endl;
-	std::cout << "x: " << x << std::endl;
+		/* sum of vel suare */
+		float vel_square_sum = 0.0;
+		for (int i =0;i<3;i++){
+			vel_square_sum +=pow(vel[i],2);
+		}
 
-	/* We do not change throttle */
-	ecbf_acc[0] = bound(x[0],10) ;
-	ecbf_acc[1] = bound(x[1],10) ;
-	//ecbf_acc[2] = bound(x[2],10) ;
-	ecbf_acc[2] = user_rc_input[3]; 
+		ci0.resize(p);
+		for (int i = 0; i < p ; i++){
+			float temp_sum = 0.0;
+			for(int j =0;j<3;j++){
+				temp_sum+=2*data[i][j]*vel[j];
+			}
+			ci0[i] = 2*vel_square_sum + K1*square_sum[i]+K2*temp_sum;
+		}
+		x.resize(n);
+		std::cout << "f: " << solve_quadprog(G, g0, CE, ce0, CI, ci0, x) << std::endl;
+		std::cout << "u: " << "x: "<<u[0] << " y: "<<u[1]<< " z: "<<u[2]<< std::endl;
+		std::cout << "x: " << x << std::endl;
+
+		/* We do not change throttle */
+		ecbf_acc[0] = bound(x[0],10) ;
+		ecbf_acc[1] = bound(x[1],10) ;
+		//ecbf_acc[2] = bound(x[2],10) ;
+		ecbf_acc[2] = user_rc_input[3]; 
+	}else{
+
+		static int qp_fail_cout = 0;
+		cout << "weird:" << qp_fail_cout++<<endl;
+		//for(int i =0;i<3;i++)
+		//	ecbf_acc[i] = user_rc_input[i]; 	
+		//ecbf_acc[2] = user_rc_input[3];
+	}
 }
 
 float ecbf::bound(float v){
@@ -395,20 +416,21 @@ void ecbf::scan_callback(const sensor_msgs::LaserScan::ConstPtr& msg){
 	sensor_msgs::PointCloud2 input_pointcloud;
 
     projector.projectLaser(*msg, input_pointcloud); // laserscan to pcl2
-
     pcl::fromROSMsg(input_pointcloud, inputCloud);
 
 
-	pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_ptr(new pcl::PointCloud<pcl::PointXYZ>);
-	cloud_ptr=inputCloud.makeShared();
-	pcl::VoxelGrid<pcl::PointXYZ> sor_map;
-	sor_map.setInputCloud (cloud_ptr);
-	sor_map.setLeafSize (0.5f, 0.5f, 0.5f);
-	sor_map.filter (*cloud_ptr);
-	inputCloud=*cloud_ptr;
+	//pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_ptr(new pcl::PointCloud<pcl::PointXYZ>);
+	//cloud_ptr=inputCloud.makeShared();
+	//pcl::VoxelGrid<pcl::PointXYZ> sor_map;
+	//sor_map.setInputCloud (cloud_ptr);
+	//sor_map.setLeafSize (0.5f, 0.5f, 0.5f);
+	//sor_map.filter (*cloud_ptr);
+	//inputCloud=*cloud_ptr;
 
 	//std::cout <<"input cloud size : " <<inputCloud.points.size()<<std::endl;
+	l_mutex.lock();
 	reduce_pcl();
+	l_mutex.unlock();
 	//std::cout <<"output cloud size : " <<outputCloud.points.size()<<std::endl;
 
 	/* calculate time */
@@ -432,12 +454,6 @@ void ecbf::get_desire_rc_input(rc_data rc_){
 
 void ecbf::debug_pub(){ 
 	/* debug */
-	ecbf_lidar::rc_compare debug_rc;
-	ecbf_lidar::acc_compare debug_qp;
-	geometry_msgs::Vector3 debug_vel;
-	geometry_msgs::Vector3 debug_vel_kf;
-	geometry_msgs::Vector3 debug_pos_kf;
-	sensor_msgs::PointCloud2 cloud;
 	
 	debug_rc.origin_roll = user_rc_input[0];
 	debug_rc.origin_pitch = user_rc_input[1];
@@ -621,7 +637,7 @@ void imu_buf_push(uint8_t c){
 
 int uart_thread_entry(){
 	ros::NodeHandle k;
-    ros::Rate loop_rate_(400);
+    ros::Rate loop_rate_(800);
 	char c;
 	imu.buf_pos = 0;
 
@@ -699,7 +715,7 @@ int uart_thread_entry(){
 
 }
 int ros_thread_entry(){
-   ros::Rate loop_rate(800);
+   ros::Rate loop_rate(1600);
 
 	while(ros::ok()){
 		loop_rate.sleep();
