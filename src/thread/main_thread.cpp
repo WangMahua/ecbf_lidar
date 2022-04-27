@@ -51,12 +51,13 @@
 
 /* EQU_NUM is the number of point you can get after reduce_pcl(), */
 /* which related to the constraint number of qp solver.           */
-#define EQU_NUM 100
+#define EQU_NUM 30
 
 /* parameter of ECBF */
-#define SAFE_DIS 1
-#define K1 2
-#define K2 2
+#define SAFE_DIS 1.2
+#define K1 3
+#define K2 1
+#define ECBF_height_limit 0.2
 
 /* parameter of kalman filter */
 /* n : Number of states       */
@@ -77,6 +78,7 @@ imu_t imu;
 uint8_t rc_ch7;
 float rc_value[4];
 int rc_ecbf_mode;
+float now_z = 0.0;
 
 std::mutex m_mutex;
 std::mutex l_mutex;
@@ -102,6 +104,7 @@ private:
 	double last_pos[3] = {0,0,0};
 	double last_time = 0.0;
 	bool pose_init_flag = false;
+	int cal_vel_flag = 0;
 
 	/* check lidar initialize finish */
 	bool lidar_init_flag = false;
@@ -181,9 +184,9 @@ ecbf::ecbf():A(s_n,s_n),C(m_n,s_n),Q(s_n,s_n),R(m_n,m_n),P(s_n,s_n),x_hat(s_n),y
 
 	A << 1,0,0,1;
 	C << 1,0,0,1;
-	Q << 1e-6,0,0,1e-6;
-	R << 1e-5,0,0,1e-5;
-	P << 1e-4,0,0,1e-4;
+	Q << 1e-4,0,0,1e-4;
+	R << 1e-5,0,0,1e-1;
+	P << 1e-4,0,0,1e-1;
 
 	x_hat.setZero();
 	y.setZero();
@@ -221,7 +224,7 @@ void ecbf::qp_solve(){
 	}
 	m_mutex.unlock();
 	cout <<"pointcloud size: "<<data.size()<<endl;
-	if (data.size()!=0){
+	if (data.size()==EQU_NUM){
 		
 		/* qp matrix give value */
 		quadprogpp::Matrix<double> G, CE, CI;
@@ -337,50 +340,65 @@ float ecbf::fix_vel(float now_vel,float old_vel){
 }
 
 void ecbf::pos_callback(const geometry_msgs::PoseStamped::ConstPtr& msg){
-		if (pose_init_flag == false){
-			now_vel_time =ros::Time::now();
-			pos[0] = msg->pose.position.x;
-			pos[1] = msg->pose.position.y;
-			pos[2] = msg->pose.position.z;
-			for(int i =0;i<3;i++){
-				last_pos[i]=pos[i];
-				last_vel[i]=vel[i];
+		if(cal_vel_flag == 0 ){
+			if (pose_init_flag == false){
+				now_vel_time =ros::Time::now();
+				pos[0] = msg->pose.position.x;
+				pos[1] = msg->pose.position.y;
+				pos[2] = msg->pose.position.z;
+				for(int i =0;i<3;i++){
+					last_pos[i]=pos[i];
+					last_vel[i]=vel[i];
+				}
+				last_vel_time = now_vel_time;
+				pose_init_flag = true;	
 			}
-			last_vel_time = now_vel_time;
-			pose_init_flag = true;	
-		}
-		else{
-			now_vel_time =ros::Time::now();
-			float clustering_time = (now_vel_time - last_vel_time).toSec();
+			else{
+				now_vel_time =ros::Time::now();
+				float clustering_time = (now_vel_time - last_vel_time).toSec();
+				cout << "delta_time: "<<clustering_time <<endl;
+				pos[0] = msg->pose.position.x;
+				pos[1] = msg->pose.position.y;
+				pos[2] = msg->pose.position.z;
+				now_z = pos[2];
 
-			pos[0] = msg->pose.position.x;
-			pos[1] = msg->pose.position.y;
-			pos[2] = msg->pose.position.z;
+				for (int i =0;i<3;i++){
+					float delta_p = pos[i] - last_pos[i];
+					delta_p = (delta_p<0.005)?0:delta_p;
+					vel[i] = (delta_p)/clustering_time;
+					vel_filter(pos[i],vel[i],clustering_time,i);
+					vel_kf[i]= x_hat[1];
+					//pos_kf[i]= x_hat[0];
 
-			for (int i =0;i<3;i++){
-				vel[i] = (pos[i] - last_pos[i])/clustering_time;
-				vel[i] = 1*(last_vel[i] + (vel[i] - last_vel[i])/clustering_time)+0*vel[i];
-				vel[i] = fix_vel(vel[i],last_vel[i]);
-				//vel_filter(pos[i],vel[i],clustering_time,i);
-				//vel_kf[i]= x_hat[1];
-				//pos_kf[i]= x_hat[0];
+					vel[i] = 0.5*(last_vel[i] + (vel[i] - last_vel[i])/clustering_time)+0.5*vel[i];
+					vel[i] = fix_vel(vel[i],last_vel[i]);
 
+
+				}
+				
+				//fix_vel();
+				//cout << "pos:"<<endl;
+				//for(int i =0 ;i<3;i++){
+				//	cout << pos[i]<<endl;
+				//}
+				//cout <<"vel:" <<endl;
+				for(int i =0;i<3;i++){
+					last_pos[i]=pos[i];
+					last_vel[i]=vel[i];
+					//cout << vel[i] << endl;
+				}
+				//cout <<"vel from kf" <<endl;
+				for(int i =0;i<3;i++){
+				//	cout << vel_kf[i] << endl;
+				}
+				
+				last_vel_time = now_vel_time;
 			}
+		}else{
 			
-			//fix_vel();
-			//cout <<"vel" <<endl;
-			for(int i =0;i<3;i++){
-				last_pos[i]=pos[i];
-				last_vel[i]=vel[i];
-				//cout << vel[i] << endl;
-			}
-			//cout <<"vel from kf" <<endl;
-			for(int i =0;i<3;i++){
-				//cout << vel_kf[i] << endl;
-			}
-			
-			last_vel_time = now_vel_time;
 		}
+		cal_vel_flag++;
+		cal_vel_flag = cal_vel_flag %5;
 }
 
 void ecbf::reduce_pcl(){
@@ -522,7 +540,7 @@ void ecbf::process(){
 	}else{
 		for (int i = 0;i<3;i++) ecbf_rc[i] = user_rc_input[i]; //[0]:roll [1]:pitch [2]:throttle
 		if(ecbf_mode!=true) cout<<"ecbf not trigger!"<<endl;
-		else cout<<"lidar has yet to initialize."<<endl;
+		else cout<<"lidar has yet to initialize. or z <0.5"<<endl;
 	}
 
 	debug_pub();
@@ -563,10 +581,11 @@ void ecbf::rc_cal(float* desire_rc){
 		throttle += thrust2per_coeff[5-i]*pow(force,i)*100;
 	}
 
-	cout << "roll_d:"<<roll<<'\n';
-	cout << "pitch_d:"<<pitch<<'\n';
-	cout << "force_d:"<<force<<"\t thrust:"<<throttle<<'\n';
-	cout << "===\n";
+	//cout << "roll_d:"<<roll<<'\n';
+	//cout << "pitch_d:"<<pitch<<'\n';
+	//cout << "force_d:"<<force<<"\t thrust:"<<throttle<<'\n';
+	//cout << "===\n";
+
 
 	desire_rc[0] =  roll;
 	desire_rc[1] =  pitch;
@@ -695,12 +714,12 @@ int uart_thread_entry(){
 					clustering_time = (now_time - begin_time).toSec();
 					ecbf_process.debug_hz(clustering_time); // hz record 
 					cout << "hz for qp solver:"<< 1/clustering_time <<endl; //hz test
-
+					cout << "pub_to_controller:"<<"x: "<< pub_to_controller[0]<<"y: "<<pub_to_controller[1]<<"z: " <<pub_to_controller[2] <<endl; //hz test
 
 					loop_rate_.sleep();
 
 
-					if(DEBUG_FLAG == 0){
+					if(DEBUG_FLAG == 0 && now_z > ECBF_height_limit){
 						send_pose_to_serial(pub_to_controller[0],pub_to_controller[1],rc_value[3],0.0,0.0,0.0,0.0,0.0,0.0,0.0);
 					}else{
 						send_pose_to_serial(rc_value[0],rc_value[1],rc_value[3],0.0,0.0,0.0,0.0,0.0,0.0,0.0);
