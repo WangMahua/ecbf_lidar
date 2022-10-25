@@ -241,7 +241,7 @@ void ecbf::qp_solve(){
 		}
 		g0.resize(n);
 		for (int i = 0; i < n ; i++){
-			g0[i] = - 0.5*u[i];
+			g0[i] = - 1*u[i];
 		}
 
 		m = 0;
