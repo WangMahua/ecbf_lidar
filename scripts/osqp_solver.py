@@ -87,7 +87,7 @@ class ConstraintGenerator:
 		#print(g.shape)
 		#print(h.shape)
 
-		self.Q = matrix(-0.5*u[0:3],tc='d')
+		self.Q = matrix(-1*u[0:3],tc='d')
 		self.G = matrix(g,tc='d')
 		self.H = matrix(h,tc='d')
 		solvers.options['feastol']=1e-4
