@@ -23,7 +23,16 @@ find_package(catkin REQUIRED COMPONENTS
   laser_geometry
   pcl_conversions
   pcl_ros
+  sensor_msgs
 )
+
+
+find_package(osqp REQUIRED)
+find_package(PCL REQUIRED)
+
+include_directories(${PCL_INCLUDE_DIRS})
+link_directories(${PCL_LIBRARY_DIRS})
+add_definitions(${PCL_DEFINITIONS})
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
@@ -139,15 +148,14 @@ include_directories(
   include
   ${catkin_INCLUDE_DIRS}
   ${ecbf_uart_INCLUDE_DIRS}
+  ${osqp_INCLUDE_DIRS}
   ${INC}
+  ~/local/quad/include/
 )
 
-## Declare a C++ library
-add_library(${PROJECT_NAME}
-  src/main.cpp
-  src/thread/main_thread.cpp
+link_directories(
+  ~/local/quad/lib/
 )
-
 
 ## Add cmake target dependencies of the library
 ## as an example, code may need to be generated before libraries
@@ -229,14 +237,42 @@ add_library(${PROJECT_NAME}
 ## Add folders to be run by python nosetests
 # catkin_add_nosetests(test)
 
+# add_library(mian_thread
+#   src/thread/main_thread.cpp
+# )
+
+# target_link_libraries(mian_thread PUBLIC
+#   ${catkin_LIBRARIES}
+#   osqp::osqp
+# )
+
 add_executable(ecbf_controller
   src/thread/main_thread.cpp
+  #src/thread/kalman_filter.cpp
   src/serial.cpp
   src/main.cpp
 )
 
 target_link_libraries(ecbf_controller PUBLIC
   ${catkin_LIBRARIES}
+  osqp::osqp
+  libquadprog.a
+
 )
 
 add_dependencies(ecbf_controller ${catkin_EXPORTED_TARGETS})
+
+# debug lidar
+add_executable(lidar_test
+  src/laser_test.cpp
+)
+target_link_libraries(lidar_test PUBLIC
+  ${catkin_LIBRARIES}
+)
+add_executable(odometry
+  src/odometry.cpp
+)
+target_link_libraries(odometry PUBLIC
+  ${catkin_LIBRARIES}
+)
+

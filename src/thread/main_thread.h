@@ -36,11 +36,9 @@ typedef struct {
 	
 } rc_data ;
 
-int lidar_thread_entry();
-
 int uart_thread_entry();
 
-int send_thread_entry();
+int ros_thread_entry();
 
 uint8_t generate_imu_checksum_byte(uint8_t *, int);
 
